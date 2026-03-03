@@ -1,0 +1,66 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>CzyPrzyjedzie - Wybierz Miasto</title>
+    <link href="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.css" rel="stylesheet" />
+    <link rel="stylesheet" href="{% static 'css/main.css' %}">
+</head>
+<body class="city-select-page">
+
+<div id="mapa"></div>
+
+<div class="ui-overlay">
+    <div class="selection-card">
+
+        <!-- IKONA AUTOBUSU -->
+        <img src="{% static 'img/CzyPrzyjedzie logo.png' %}" class="logo-icon">
+
+        <h1 class="main-title">CzyPrzyjedzie</h1>
+
+        <p class="subtitle">
+            <i>„Gdzie jest ten cholerny autobus?"</i>
+        </p>
+
+        <p class="choose-text">
+            Wybierz miasto, aby zobaczyć komunikację miejską
+            <b>w czasie rzeczywistym:</b>
+        </p>
+
+        {% for city in cities %}
+<a href="{% url 'city_detail' city.name %}" class="city-button">
+
+    <span class="flag">{{ city.country_icon }}</span>
+
+    <div class="city-content">
+        <div class="city-name-line">
+            {{ city.display_name }} ({{ city.country_name }})
+        </div>
+
+        {% if city.description %}
+        <div class="city-description">
+            {{ city.description }}
+        </div>
+        {% endif %}
+    </div>
+
+</a>
+{% endfor %}
+
+
+    </div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.js"></script>
+<script>
+    const mapa = new maplibregl.Map({
+        container: 'mapa',
+        style: 'https://api.maptiler.com/maps/019a2aeb-66d6-7ae1-8e66-ddc39a2d91ce/style.json?key=15p5ShrQcio1MZJsVG1w',
+        center: [{{ map_center.0 }}, {{ map_center.1 }}],
+        zoom: {{ map_zoom }}
+    });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,241 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ city.display_name }} - CzyPrzyjedzie</title>
+    <link href="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="icon" type="image/x-icon" href="{% static 'img/favicon.ico' %}">
+    <link rel="stylesheet" href="{% static 'css/main.css' %}">
+    <script>
+    window.STATIC_URL = "{% get_static_prefix %}";
+    </script>
+</head>
+<body class="city-map-page">
+
+<div id="mapa"></div>
+
+<div class="ui-overlay">
+    <div class="left-controls">
+        <div class="circle-btn-mniejszy" onclick="openMenu()">
+            <i data-lucide="menu"></i>
+        </div>
+        <div class="circle-btn-mniejszy">
+            <i data-lucide="search"></i>
+        </div>
+    </div>
+
+    <div class="right-controls">
+        <div class="circle-btn-mniejszy" onclick="mapa.zoomIn()">
+            <i data-lucide="plus"></i>
+        </div>
+        <div class="circle-btn-mniejszy" onclick="mapa.zoomOut()">
+            <i data-lucide="minus"></i>
+        </div>
+        <div class="circle-btn-mniejszy">
+            <i data-lucide="star"></i>
+        </div>
+    </div>
+
+    <div class="bottom-control">
+        <div class="circle-btn">
+            <i data-lucide="navigation"></i>
+        </div>
+    </div>
+</div>
+
+<!-- MENU OVERLAY -->
+<div id="menu-overlay" class="overlay-hidden">
+    <div class="selection-card">
+        <img src="{% static 'img/CzyPrzyjedzie logo.png' %}" class="logo-icon">
+        <h1 class="main-title">CzyPrzyjedzie</h1>
+        <p class="subtitle"><i>„Gdzie jest ten cholerny autobus?"</i></p>
+        <div class="menu-buttons">
+            <a href="/" class="city-button">
+                <span class="menu-icon"><i data-lucide="building-2"></i></span>
+                <div class="city-content"><div class="city-name-line">Miasto</div></div>
+            </a>
+            <div class="city-button" onclick="closeMenu()">
+                <span class="menu-icon"><i data-lucide="map-pin"></i></span>
+                <div class="city-content"><div class="city-name-line">Mapa</div></div>
+            </div>
+            <div class="city-button" onclick="openSchedules()">
+                <span class="menu-icon"><i data-lucide="calendar"></i></span>
+                <div class="city-content"><div class="city-name-line">Rozkłady</div></div>
+            </div>
+            <div class="city-button" onclick="openSettings()">
+                <span class="menu-icon"><i data-lucide="settings"></i></span>
+                <div class="city-content"><div class="city-name-line">Ustawienia</div></div>
+            </div>
+            <div class="city-button" onclick="openAbout()">
+                <span class="menu-icon"><i data-lucide="info"></i></span>
+                <div class="city-content"><div class="city-name-line">O stronie</div></div>
+            </div>
+        </div>
+        <p>Created by <b>pawlinski07</b></p>
+        <p class="subtitle">© OpenStreetMap contributors</p>
+    </div>
+</div>
+
+<!-- ROZKŁADY OVERLAY -->
+<div id="schedules-overlay" class="overlay-hidden">
+    <div class="selection-card">
+        <p class="choose-text"><b>Rozkłady</b></p>
+        <div class="menu-buttons"><!-- tu będą linie --></div>
+        <div class="city-button" onclick="closeSchedules()">
+            <span class="menu-icon"><i data-lucide="arrow-left"></i></span>
+            <div class="city-content"><div class="city-name-line">Powrót</div></div>
+        </div>
+    </div>
+</div>
+
+<!-- USTAWIENIA OVERLAY -->
+<div id="settings-overlay" class="overlay-hidden">
+    <div class="selection-card">
+        <p class="choose-text"><b>Ustawienia</b></p>
+        <div class="menu-buttons"><!-- tu będą ustawienia --></div>
+        <div class="city-button" onclick="closeSettings()">
+            <span class="menu-icon"><i data-lucide="arrow-left"></i></span>
+            <div class="city-content"><div class="city-name-line">Powrót</div></div>
+        </div>
+    </div>
+</div>
+
+<!-- O STRONIE OVERLAY -->
+<div id="about-overlay" class="overlay-hidden">
+    <div class="selection-card">
+        <p class="choose-text"><b>O stronie</b></p>
+        <div class="about-content">
+            <p><b>CzyPrzyjedzie</b> to aplikacja do śledzenia komunikacji miejskiej w czasie rzeczywistym.</p>
+            <p>Dzięki niej możesz sprawdzić, gdzie aktualnie znajdują się autobusy i tramwaje w Twoim mieście.</p>
+            <p>Aplikacja jest w fazie rozwoju i będzie systematycznie rozbudowywana o nowe funkcje i miasta.</p>
+        </div>
+        <div class="city-button" onclick="closeAbout()">
+            <span class="menu-icon"><i data-lucide="arrow-left"></i></span>
+            <div class="city-content"><div class="city-name-line">Powrót</div></div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.js"></script>
+<script>
+    lucide.createIcons();
+
+    const mapa = new maplibregl.Map({
+        container: 'mapa',
+        style: 'https://api.maptiler.com/maps/019a2aeb-66d6-7ae1-8e66-ddc39a2d91ce/style.json?key=15p5ShrQcio1MZJsVG1w',
+        center: [{{ city.longitude }}, {{ city.latitude }}],
+        zoom: {{ city.start_zoom }}
+    });
+
+    const ROUTE_TYPE_CONFIG = {
+        0: { icon: 'tram.png', color: '#DA797E', name: 'Tramwaj' },
+        1: { icon: 'subway.png', color: '#8F96DA', name: 'Metro' },
+        2: { icon: 'train.png', color: '#2C95D0', name: 'Kolej' },
+        3: { icon: 'bus.png', color: '#43842B', name: 'Autobus' },
+        5: { icon: 'cable-car.png', color: '#679BD4', name: 'Kolej linowa' },
+        7: { icon: 'funicular.png', color: '#679BD4', name: 'Kolej zębata' },
+        800: { icon: 'trolleybus.png', color: '#7FA670', name: 'Trolejbus' }
+    };
+
+    let allMarkers = [];
+    let zoomTimeout;
+
+    function createStopMarkerHTML(routeTypes) {
+    const uniqueTypes = [...new Set(routeTypes)];
+    const hasTrain = uniqueTypes.includes(2);
+
+    const markerSize = hasTrain ? 26 : 18;
+    const borderRadius = hasTrain ? 5 : 4;
+
+    const iconsHTML = uniqueTypes.map(type => {
+        if (!ROUTE_TYPE_CONFIG[type]) return '';
+
+        const iconHeight = type === 2 ? 18 : 15;
+        const iconUrl = window.STATIC_URL + 'img/' + ROUTE_TYPE_CONFIG[type].icon;
+
+        return `
+            <div
+                class="stop-icon"
+                style="
+                    height: ${iconHeight}px;
+                    width: ${iconHeight}px;
+                    -webkit-mask: url('${iconUrl}') no-repeat center / contain;
+                    mask: url('${iconUrl}') no-repeat center / contain;
+                ">
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <div
+            class="stop-marker"
+            style="
+                width: ${markerSize}px;
+                height: ${markerSize}px;
+                border-radius: ${borderRadius}px;
+                background-color: #2C95D0;
+            ">
+            <div class="stop-icons-container">
+                ${iconsHTML}
+            </div>
+        </div>
+    `;
+}
+
+    function updateMarkersVisibility() {
+        clearTimeout(zoomTimeout);
+        zoomTimeout = setTimeout(() => {
+            const currentZoom = mapa.getZoom();
+            const shouldShow = currentZoom > 14;
+            allMarkers.forEach(marker => {
+                marker.getElement().style.display = shouldShow ? 'block' : 'none';
+            });
+        }, 50);
+    }
+
+    mapa.on('load', function() {
+        fetch('/api/{{ city.name }}/stops/')
+            .then(response => response.json())
+            .then(data => {
+                data.stops.forEach(stop => {
+                    const el = document.createElement('div');
+                    el.innerHTML = createStopMarkerHTML(stop.route_types);
+                    el.className = 'custom-marker';
+
+                    // Używamy kotwicy 'bottom' dla stabilniejszego pozycjonowania
+                    const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+                        .setLngLat([stop.lon, stop.lat])
+                        .setPopup(new maplibregl.Popup({ offset: 15 }).setHTML(`<strong>${stop.name}</strong>`))
+                        .addTo(mapa);
+
+                    allMarkers.push(marker);
+                });
+                updateMarkersVisibility();
+            })
+            .catch(error => console.error('Błąd ładowania przystanków:', error));
+    });
+
+    mapa.on('zoom', updateMarkersVisibility);
+
+    // Funkcje zarządzania widokami
+    function openMenu() {
+        document.getElementById('menu-overlay').classList.remove('overlay-hidden');
+        document.getElementById('menu-overlay').classList.add('overlay-visible');
+        lucide.createIcons();
+    }
+    function closeMenu() {
+        document.getElementById('menu-overlay').classList.remove('overlay-visible');
+        document.getElementById('menu-overlay').classList.add('overlay-hidden');
+    }
+    function openSchedules() { closeMenu(); document.getElementById('schedules-overlay').classList.remove('overlay-hidden'); document.getElementById('schedules-overlay').classList.add('overlay-visible'); lucide.createIcons(); }
+    function closeSchedules() { document.getElementById('schedules-overlay').classList.remove('overlay-visible'); document.getElementById('schedules-overlay').classList.add('overlay-hidden'); openMenu(); }
+    function openSettings() { closeMenu(); document.getElementById('settings-overlay').classList.remove('overlay-hidden'); document.getElementById('settings-overlay').classList.add('overlay-visible'); lucide.createIcons(); }
+    function closeSettings() { document.getElementById('settings-overlay').classList.remove('overlay-visible'); document.getElementById('settings-overlay').classList.add('overlay-hidden'); openMenu(); }
+    function openAbout() { closeMenu(); document.getElementById('about-overlay').classList.remove('overlay-hidden'); document.getElementById('about-overlay').classList.add('overlay-visible'); lucide.createIcons(); }
+    function closeAbout() { document.getElementById('about-overlay').classList.remove('overlay-visible'); document.getElementById('about-overlay').classList.add('overlay-hidden'); openMenu(); }
+</script>
+
+</body>
+</html>
