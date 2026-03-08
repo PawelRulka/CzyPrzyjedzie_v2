@@ -18,4 +18,10 @@ urlpatterns = [
     path("getBlockScheduleForRoute.json", api.get_block_schedule_for_route),
     path("getTheoriticalBlockDetails.json", api.get_theoritical_block_details),
     path("getBlocksForFeedAndDate.json", api.get_blocks_for_feed_and_date),
+
+    # Opóźnienia
+    path("getLineBrigadeDelayForTrip.json", api.get_line_brigade_delay_for_trip),
+
+    # Realtime (debug / podgląd)
+    path("getParsedRealtimeForFeed.json", api.get_parsed_realtime_for_feed),
 ]

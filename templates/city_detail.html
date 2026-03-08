@@ -8,9 +8,127 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <link rel="icon" type="image/x-icon" href="{% static 'img/favicon.ico' %}">
     <link rel="stylesheet" href="{% static 'css/main.css' %}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     <script>
-    window.STATIC_URL = "{% get_static_prefix %}";
+        window.STATIC_URL = "{% get_static_prefix %}";
+        window.CITY_NAME = "{{ city.name }}";
+        // All active GTFS feeds for this city
+        window.GTFS_FEEDS = [{% for feed in city.feeds.all %}{% if feed.is_active %}{"name":"{{ feed.name|escapejs }}"}{% if not forloop.last %},{% endif %}{% endif %}{% endfor %}];
     </script>
+    <style>
+        /* ── Settings panel ── */
+        .settings-scroll {
+            max-height: 60vh;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+        .settings-scroll::-webkit-scrollbar { width: 4px; }
+        .settings-scroll::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
+
+        .settings-section { margin-bottom: 18px; }
+        .settings-section-title {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: #999;
+            padding: 0 2px;
+            margin-bottom: 6px;
+        }
+        .setting-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 9px 12px;
+            border-radius: 8px;
+            background: rgba(0,0,0,0.04);
+            margin-bottom: 5px;
+        }
+        .setting-label {
+            font-size: 13px;
+            line-height: 1.3;
+            flex: 1;
+        }
+        .setting-label small { color: #aaa; font-size: 11px; }
+
+        /* Toggle switch */
+        .toggle-switch { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider {
+            position: absolute; cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #ccc; border-radius: 24px; transition: .2s;
+        }
+        .toggle-slider:before {
+            position: absolute; content: "";
+            height: 18px; width: 18px; left: 3px; bottom: 3px;
+            background: white; border-radius: 50%; transition: .2s;
+        }
+        .toggle-switch input:checked + .toggle-slider { background-color: #4CAF50; }
+        .toggle-switch input:checked + .toggle-slider:before { transform: translateX(20px); }
+
+        /* Language selector */
+        .lang-options { display: flex; gap: 8px; width: 100%; }
+        .lang-option {
+            flex: 1; display: flex; align-items: center; justify-content: center;
+            gap: 6px; padding: 9px 6px; border-radius: 8px;
+            border: 2px solid #e0e0e0; cursor: pointer; font-size: 13px; font-weight: 600;
+            transition: all .2s; user-select: none;
+        }
+        .lang-option input { display: none; }
+        .lang-option.active { border-color: #4CAF50; background: rgba(76,175,80,.1); color: #2e7d32; }
+
+        /* ── Vehicle markers ── */
+        .vehicle-custom-marker { cursor: pointer; z-index: 100 !important; }
+        .vm-wrap { display: inline-flex; }
+        .vm-body {
+            display: flex; align-items: center;
+            padding: 5px 8px; border-radius: 10px;
+            box-shadow: 0 3px 8px rgba(0,0,0,.4);
+            gap: 5px; position: relative;
+        }
+
+        /* Arrow inside the marker – left side */
+        .vm-arrow-wrap {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            width: 12px;
+            height: 12px;
+        }
+        .vm-arrow-svg {
+            width: 12px;
+            height: 12px;
+            transition: transform 0.3s ease;
+            filter: drop-shadow(0 1px 1px rgba(0,0,0,.25));
+        }
+
+        .vm-icon {
+            width: 15px; height: 15px;
+            background-color: rgba(255,255,255,.9);
+            flex-shrink: 0;
+        }
+        .vm-label {
+            font-family: 'Roboto', sans-serif;
+            font-weight: 700; font-size: 12px;
+            color: white; white-space: nowrap; line-height: 1;
+        }
+
+        /* ── Vehicle dot (low zoom) ── */
+        .vm-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            box-shadow: 0 1px 4px rgba(0,0,0,.5);
+        }
+        /* Animate the outer wrapper when switching modes */
+        .vehicle-custom-marker { transition: transform .25s ease; }
+
+        /* ── Stop markers stay below vehicles ── */
+        .custom-marker { z-index: 1 !important; }
+    </style>
 </head>
 <body class="city-map-page">
 
@@ -25,7 +143,6 @@
             <i data-lucide="search"></i>
         </div>
     </div>
-
     <div class="right-controls">
         <div class="circle-btn-mniejszy" onclick="mapa.zoomIn()">
             <i data-lucide="plus"></i>
@@ -37,7 +154,6 @@
             <i data-lucide="star"></i>
         </div>
     </div>
-
     <div class="bottom-control">
         <div class="circle-btn">
             <i data-lucide="navigation"></i>
@@ -45,7 +161,7 @@
     </div>
 </div>
 
-<!-- MENU OVERLAY -->
+<!-- ══ MENU OVERLAY ══ -->
 <div id="menu-overlay" class="overlay-hidden">
     <div class="selection-card">
         <img src="{% static 'img/CzyPrzyjedzie logo.png' %}" class="logo-icon">
@@ -78,7 +194,7 @@
     </div>
 </div>
 
-<!-- ROZKŁADY OVERLAY -->
+<!-- ══ ROZKŁADY OVERLAY ══ -->
 <div id="schedules-overlay" class="overlay-hidden">
     <div class="selection-card">
         <p class="choose-text"><b>Rozkłady</b></p>
@@ -90,19 +206,128 @@
     </div>
 </div>
 
-<!-- USTAWIENIA OVERLAY -->
+<!-- ══ USTAWIENIA OVERLAY ══ -->
 <div id="settings-overlay" class="overlay-hidden">
     <div class="selection-card">
         <p class="choose-text"><b>Ustawienia</b></p>
-        <div class="menu-buttons"><!-- tu będą ustawienia --></div>
-        <div class="city-button" onclick="closeSettings()">
-            <span class="menu-icon"><i data-lucide="arrow-left"></i></span>
-            <div class="city-content"><div class="city-name-line">Powrót</div></div>
+
+        <div class="settings-scroll">
+
+            <!-- A. Znacznik pojazdu -->
+            <div class="settings-section">
+                <div class="settings-section-title">Znacznik pojazdu</div>
+
+                <div class="setting-item">
+                    <span class="setting-label">Pokaż numer brygady</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="s-show-brigade"
+                               onchange="saveSetting('showBrigade', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item">
+                    <span class="setting-label">Pokaż numer taborowy</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="s-show-vehicle"
+                               onchange="saveSetting('showVehicle', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item">
+                    <span class="setting-label">Pokaż opóźnienie pojazdu</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="s-show-delay"
+                               onchange="saveSetting('showDelay', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item">
+                    <span class="setting-label">
+                        Nie zmniejszaj znaczników pojazdów
+                        <small>(może spowolnić działanie aplikacji)</small>
+                    </span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="s-no-shrink"
+                               onchange="saveSetting('noShrinkMarkers', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- B. Zachowanie aplikacji -->
+            <div class="settings-section">
+                <div class="settings-section-title">Zachowanie aplikacji</div>
+
+                <div class="setting-item">
+                    <span class="setting-label">Użyj ostatniej lokalizacji na mapie przy jej otwarciu</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="s-last-location"
+                               onchange="saveSetting('useLastLocation', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item">
+                    <span class="setting-label">Pokazuj czasy w strefie czasowej użytkownika</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="s-user-timezone"
+                               onchange="saveSetting('userTimezone', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item">
+                    <span class="setting-label">
+                        Odwrócone znaki punktualności
+                        <small>(- jako przed czasem, + jako opóźnienie)</small>
+                    </span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="s-inverted-punctuality"
+                               onchange="saveSetting('invertedPunctuality', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item">
+                    <span class="setting-label">Sortuj przystanki według twojej lokalizacji</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="s-sort-by-location"
+                               onchange="saveSetting('sortByLocation', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- C. Język -->
+            <div class="settings-section">
+                <div class="settings-section-title">Język</div>
+                <div class="lang-options">
+                    <label class="lang-option" id="lang-pl-btn" onclick="setLanguage('pl')">
+                        <input type="radio" name="language" value="pl">
+                        🇵🇱 Polski
+                    </label>
+                    <label class="lang-option" id="lang-en-btn" onclick="setLanguage('en')">
+                        <input type="radio" name="language" value="en">
+                        🇬🇧 English
+                    </label>
+                </div>
+            </div>
+
+        </div><!-- /settings-scroll -->
+
+        <div style="margin-top:12px;">
+            <div class="city-button" onclick="closeSettings()">
+                <span class="menu-icon"><i data-lucide="arrow-left"></i></span>
+                <div class="city-content"><div class="city-name-line">Powrót</div></div>
+            </div>
         </div>
     </div>
 </div>
 
-<!-- O STRONIE OVERLAY -->
+<!-- ══ O STRONIE OVERLAY ══ -->
 <div id="about-overlay" class="overlay-hidden">
     <div class="selection-card">
         <p class="choose-text"><b>O stronie</b></p>
@@ -118,123 +343,572 @@
     </div>
 </div>
 
+<!-- ══ SCRIPTS ══ -->
 <script src="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.js"></script>
 <script>
-    lucide.createIcons();
+lucide.createIcons();
 
-    const mapa = new maplibregl.Map({
-        container: 'mapa',
-        style: 'https://api.maptiler.com/maps/019a2aeb-66d6-7ae1-8e66-ddc39a2d91ce/style.json?key=15p5ShrQcio1MZJsVG1w',
-        center: [{{ city.longitude }}, {{ city.latitude }}],
-        zoom: {{ city.start_zoom }}
-    });
+// ════════════════════════════════════════
+//  SETTINGS
+// ════════════════════════════════════════
+const SETTINGS_KEY = 'czyprzyjezdzie_settings';
+const DEFAULT_SETTINGS = {
+    showBrigade:         false,
+    showVehicle:         false,
+    showDelay:           false,
+    noShrinkMarkers:     false,
+    useLastLocation:     false,
+    userTimezone:        false,
+    invertedPunctuality: false,
+    sortByLocation:      false,
+    language:            'pl'
+};
 
-    const ROUTE_TYPE_CONFIG = {
-        0: { icon: 'tram.png', color: '#DA797E', name: 'Tramwaj' },
-        1: { icon: 'subway.png', color: '#8F96DA', name: 'Metro' },
-        2: { icon: 'train.png', color: '#2C95D0', name: 'Kolej' },
-        3: { icon: 'bus.png', color: '#43842B', name: 'Autobus' },
-        5: { icon: 'cable-car.png', color: '#679BD4', name: 'Kolej linowa' },
-        7: { icon: 'funicular.png', color: '#679BD4', name: 'Kolej zębata' },
-        800: { icon: 'trolleybus.png', color: '#7FA670', name: 'Trolejbus' }
-    };
-
-    let allMarkers = [];
-    let zoomTimeout;
-
-    function createStopMarkerHTML(routeTypes) {
-    const uniqueTypes = [...new Set(routeTypes)];
-    const hasTrain = uniqueTypes.includes(2);
-
-    const markerSize = hasTrain ? 26 : 18;
-    const borderRadius = hasTrain ? 5 : 4;
-
-    const iconsHTML = uniqueTypes.map(type => {
-        if (!ROUTE_TYPE_CONFIG[type]) return '';
-
-        const iconHeight = type === 2 ? 18 : 15;
-        const iconUrl = window.STATIC_URL + 'img/' + ROUTE_TYPE_CONFIG[type].icon;
-
-        return `
-            <div
-                class="stop-icon"
-                style="
-                    height: ${iconHeight}px;
-                    width: ${iconHeight}px;
-                    -webkit-mask: url('${iconUrl}') no-repeat center / contain;
-                    mask: url('${iconUrl}') no-repeat center / contain;
-                ">
-            </div>
-        `;
-    }).join('');
-
-    return `
-        <div
-            class="stop-marker"
-            style="
-                width: ${markerSize}px;
-                height: ${markerSize}px;
-                border-radius: ${borderRadius}px;
-                background-color: #2C95D0;
-            ">
-            <div class="stop-icons-container">
-                ${iconsHTML}
-            </div>
-        </div>
-    `;
+function loadSettings() {
+    try {
+        const raw = localStorage.getItem(SETTINGS_KEY);
+        return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : { ...DEFAULT_SETTINGS };
+    } catch (e) {
+        return { ...DEFAULT_SETTINGS };
+    }
 }
 
-    function updateMarkersVisibility() {
-        clearTimeout(zoomTimeout);
-        zoomTimeout = setTimeout(() => {
-            const currentZoom = mapa.getZoom();
-            const shouldShow = currentZoom > 14;
-            allMarkers.forEach(marker => {
-                marker.getElement().style.display = shouldShow ? 'block' : 'none';
+function saveSetting(key, value) {
+    const s = loadSettings();
+    s[key] = value;
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) {}
+}
+
+function setLanguage(lang) {
+    saveSetting('language', lang);
+    _updateLangUI(lang);
+}
+
+function _updateLangUI(lang) {
+    document.getElementById('lang-pl-btn').classList.toggle('active', lang === 'pl');
+    document.getElementById('lang-en-btn').classList.toggle('active', lang === 'en');
+}
+
+function applySettingsToUI() {
+    const s = loadSettings();
+    document.getElementById('s-show-brigade').checked        = s.showBrigade;
+    document.getElementById('s-show-vehicle').checked        = s.showVehicle;
+    document.getElementById('s-show-delay').checked          = s.showDelay;
+    document.getElementById('s-no-shrink').checked           = s.noShrinkMarkers;
+    document.getElementById('s-last-location').checked       = s.useLastLocation;
+    document.getElementById('s-user-timezone').checked       = s.userTimezone;
+    document.getElementById('s-inverted-punctuality').checked = s.invertedPunctuality;
+    document.getElementById('s-sort-by-location').checked    = s.sortByLocation;
+    _updateLangUI(s.language);
+}
+
+applySettingsToUI();
+
+// ════════════════════════════════════════
+//  MAP INIT
+// ════════════════════════════════════════
+const _initSettings = loadSettings();
+let _initCenter = [{{ city.longitude }}, {{ city.latitude }}];
+let _initZoom   = {{ city.start_zoom }};
+
+if (_initSettings.useLastLocation) {
+    try {
+        const saved = localStorage.getItem('czyprzyjezdzie_lastview_{{ city.name }}');
+        if (saved) {
+            const v = JSON.parse(saved);
+            if (v.center && v.zoom !== undefined) {
+                _initCenter = v.center;
+                _initZoom   = v.zoom;
+            }
+        }
+    } catch (e) {}
+}
+
+const mapa = new maplibregl.Map({
+    container: 'mapa',
+    style: 'https://api.maptiler.com/maps/019a2aeb-66d6-7ae1-8e66-ddc39a2d91ce/style.json?key=15p5ShrQcio1MZJsVG1w',
+    center: _initCenter,
+    zoom:   _initZoom
+});
+
+// Persist last view
+mapa.on('moveend', () => {
+    if (!loadSettings().useLastLocation) return;
+    try {
+        localStorage.setItem('czyprzyjezdzie_lastview_{{ city.name }}', JSON.stringify({
+            center: [mapa.getCenter().lng, mapa.getCenter().lat],
+            zoom:    mapa.getZoom()
+        }));
+    } catch (e) {}
+});
+
+// ════════════════════════════════════════
+//  ROUTE TYPE CONFIG
+// ════════════════════════════════════════
+const ROUTE_TYPE_CONFIG = {
+    0:   { icon: 'tram.png',       color: '#DA797E', name: 'Tramwaj'       },
+    1:   { icon: 'subway.png',     color: '#8F96DA', name: 'Metro'         },
+    2:   { icon: 'train.png',      color: '#2C95D0', name: 'Kolej'         },
+    3:   { icon: 'bus.png',        color: '#43842B', name: 'Autobus'       },
+    5:   { icon: 'cable-car.png',  color: '#679BD4', name: 'Kolej linowa'  },
+    7:   { icon: 'funicular.png',  color: '#679BD4', name: 'Kolej zębata'  },
+    800: { icon: 'trolleybus.png', color: '#7FA670', name: 'Trolejbus'     }
+};
+
+// ════════════════════════════════════════
+//  STOP MARKERS
+// ════════════════════════════════════════
+let allStopMarkers = [];
+let _zoomTimeout;
+
+function createStopMarkerHTML(routeTypes) {
+    const uniqueTypes = [...new Set(routeTypes)];
+    const hasTrain    = uniqueTypes.includes(2);
+    const size        = hasTrain ? 26 : 18;
+    const radius      = hasTrain ? 5  : 4;
+
+    const iconsHTML = uniqueTypes.map(type => {
+        const cfg = ROUTE_TYPE_CONFIG[type];
+        if (!cfg) return '';
+        const h   = type === 2 ? 18 : 15;
+        const url = window.STATIC_URL + 'img/' + cfg.icon;
+        return `<div class="stop-icon" style="height:${h}px;width:${h}px;
+            -webkit-mask:url('${url}') no-repeat center/contain;
+            mask:url('${url}') no-repeat center/contain;"></div>`;
+    }).join('');
+
+    return `<div class="stop-marker" style="width:${size}px;height:${size}px;
+        border-radius:${radius}px;background-color:#2C95D0;">
+        <div class="stop-icons-container">${iconsHTML}</div>
+    </div>`;
+}
+
+function updateStopMarkersVisibility() {
+    clearTimeout(_zoomTimeout);
+    _zoomTimeout = setTimeout(() => {
+        const show = mapa.getZoom() > 14;
+        allStopMarkers.forEach(m => {
+            m.getElement().style.display = show ? 'block' : 'none';
+        });
+    }, 50);
+}
+
+let _vehicleZoomTimeout;
+/**
+ * Switch vehicle markers between full and dot mode based on zoom level.
+ * Threshold matches stop marker visibility (zoom > 14 = full, ≤ 14 = dot).
+ */
+function updateVehicleMarkersZoom() {
+    clearTimeout(_vehicleZoomTimeout);
+    _vehicleZoomTimeout = setTimeout(() => {
+        const fullMode = mapa.getZoom() > 14;
+        for (const key of Object.keys(vehicleMarkers)) {
+            const meta = vehicleMarkerMeta[key];
+            if (!meta) continue;
+            const el = vehicleMarkers[key].getElement();
+            el.innerHTML = fullMode ? meta.fullHtml : meta.dotHtml;
+        }
+    }, 50);
+}
+
+// ════════════════════════════════════════
+//  VEHICLE MARKERS
+// ════════════════════════════════════════
+const vehicleMarkers    = {};   // key → maplibre Marker
+const vehiclePositions  = {};   // key → { lat, lon } – last known position for animation
+const vehicleMarkerMeta = {};   // key → { fullHtml, dotHtml } – for zoom mode switching
+const vehicleBearings   = {};   // key → number – last known non-null bearing per vehicle  // FIX: persist bearing
+const tripDetailsCache  = {};   // "feed:tripId"   → object
+const routeDetailsCache = {};   // "feed:routeId"  → object
+const routeFeedFetched  = new Set(); // feeds already bulk-fetched
+
+/**
+ * Build the minimalist dot HTML for a vehicle marker (used at low zoom levels).
+ * Matches the background colour of the full marker.
+ */
+function buildVehicleDotHTML(bg) {
+    return `<div class="vm-dot" style="background:${bg};"></div>`;
+}
+
+function _todayDate() {
+    const n = new Date();
+    return `${n.getFullYear()}${String(n.getMonth()+1).padStart(2,'0')}${String(n.getDate()).padStart(2,'0')}`;
+}
+
+async function _fetchTripDetails(tripId, feedName) {
+    const key = `${feedName}:${tripId}`;
+    if (tripDetailsCache[key]) return tripDetailsCache[key];
+    try {
+        const url = `/api/getLineBrigadeDelayForTrip.json?city=${window.CITY_NAME}` +
+                    `&feed_name=${encodeURIComponent(feedName)}` +
+                    `&date=${_todayDate()}` +
+                    `&trip_id=${encodeURIComponent(tripId)}`;
+        const r = await fetch(url);
+        if (!r.ok) return null;
+        const data = await r.json();
+        const trip = data.trips?.[0] ?? data;
+        tripDetailsCache[key] = trip;
+        return trip;
+    } catch (e) { return null; }
+}
+
+/**
+ * Bulk-fetch all routes for a feed in one request and populate routeDetailsCache.
+ * Subsequent calls for the same feed are no-ops (routeFeedFetched guard).
+ */
+async function _fetchAllRouteDetailsForFeed(feedName) {
+    if (routeFeedFetched.has(feedName)) return;
+    routeFeedFetched.add(feedName);
+    try {
+        const url = `/api/getRouteDetails.json?city=${window.CITY_NAME}` +
+                    `&feed_name=${encodeURIComponent(feedName)}`;
+        const r = await fetch(url);
+        if (!r.ok) { routeFeedFetched.delete(feedName); return; }
+        const data = await r.json();
+        for (const route of (data.routes || [])) {
+            const key = `${feedName}:${route.route_id}`;
+            if (!routeDetailsCache[key]) routeDetailsCache[key] = route;
+        }
+    } catch (e) {
+        console.error('Błąd bulk getRouteDetails:', e);
+        routeFeedFetched.delete(feedName); // pozwól na ponowną próbę
+    }
+}
+
+/**
+ * Returns route details from cache, triggering a bulk feed fetch if needed.
+ */
+async function _fetchRouteDetails(routeId, feedName) {
+    const key = `${feedName}:${routeId}`;
+    if (routeDetailsCache[key]) return routeDetailsCache[key];
+    await _fetchAllRouteDetailsForFeed(feedName);
+    return routeDetailsCache[key] ?? null;
+}
+
+/**
+ * Build the inner HTML for a vehicle marker.
+ *
+ * Strzałka kierunku jest teraz wewnątrz .vm-body, po lewej stronie jako .vm-arrow-wrap.
+ * SVG strzałki obraca się wokół własnego środka zgodnie z bearingiem (0=N, 90=E itd.).
+ * Gdy bearing === null – strzałka nie jest renderowana.
+ */
+function buildVehicleMarkerHTML(routeShortName, blockId, vehicleId, routeType, colorHex, bearing, settings) {
+    const cfg     = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
+    const bg      = colorHex ? `#${colorHex}` : cfg.color;
+    const iconUrl = window.STATIC_URL + 'img/' + cfg.icon;
+
+    const parts = [routeShortName || '?'];
+    if (settings.showBrigade && blockId && blockId !== 'N/A')   parts.push(blockId);
+    if (settings.showVehicle && vehicleId) parts.push(vehicleId);
+    const label = parts.join('/');
+
+    const arrowHTML = bearing != null ? `
+        <div class="vm-arrow-wrap">
+            <svg class="vm-arrow-svg" viewBox="0 0 14 14"
+                 style="transform: rotate(${bearing}deg);">
+                <polygon points="7,1 13,13 7,10 1,13"
+                         fill="rgba(255,255,255,0.92)"/>
+            </svg>
+        </div>` : '';
+
+    const html = `<div class="vm-wrap">
+        <div class="vm-body" style="background:${bg};">
+            ${arrowHTML}
+            <div class="vm-icon" style="-webkit-mask:url('${iconUrl}') no-repeat center/contain;
+                                        mask:url('${iconUrl}') no-repeat center/contain;"></div>
+            <span class="vm-label">${label}</span>
+        </div>
+    </div>`;
+
+    return { html, bg };
+}
+
+// ════════════════════════════════════════
+//  MARKER POSITION ANIMATION
+// ════════════════════════════════════════
+/**
+ * Animate a MapLibre marker smoothly from one position to another.
+ * Uses requestAnimationFrame with ease-in-out easing.
+ */
+function animateMarkerTo(marker, fromLat, fromLon, toLat, toLon, duration = 1200) {
+    // Skip animation if distance is negligible
+    const dlat = toLat - fromLat;
+    const dlon = toLon - fromLon;
+    if (Math.abs(dlat) < 1e-7 && Math.abs(dlon) < 1e-7) return;
+
+    const start = performance.now();
+
+    function easeInOut(t) {
+        return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    }
+
+    function step(now) {
+        const raw = Math.min((now - start) / duration, 1);
+        const t   = easeInOut(raw);
+        marker.setLngLat([
+            fromLon + dlon * t,
+            fromLat + dlat * t
+        ]);
+        if (raw < 1) requestAnimationFrame(step);
+    }
+
+    requestAnimationFrame(step);
+}
+
+/**
+ * Parse a single GTFS-RT JSON feed (already decoded from .pb → JSON by the server)
+ * and return a flat list of vehicle objects.
+ *
+ * FIX: API returns camelCase (tripId, routeId) – was incorrectly read as snake_case.
+ */
+function _parseGtfsRtJson(feedName, data) {
+    const result = [];
+    for (const entity of (data.entity || [])) {
+        const v = entity.vehicle;
+        if (!v || !v.position) continue;
+        const { latitude: lat, longitude: lon, speed, calculatedBearing } = v.position;
+        if (lat == null || lon == null) continue;
+        // Prefer label over id; treat missing/null/"N/A" as no vehicle number
+        const rawId    = v.vehicle?.id    ?? entity.id ?? null;
+        const rawLabel = v.vehicle?.label ?? null;
+        let vehicleId = null;
+        if (rawLabel != null && rawLabel !== '' && rawLabel !== 'null' && rawLabel !== 'N/A') {
+            vehicleId = rawLabel;
+        } else if (rawId != null && rawId !== '' && rawId !== 'null' && rawId !== 'N/A') {
+            vehicleId = rawId;
+        }
+
+        result.push({
+            feed_name:  feedName,
+            vehicle_id: vehicleId,
+            // FIX: API uses camelCase (tripId / routeId), not snake_case
+            trip_id:    v.trip?.tripId  ?? null,
+            route_id:   v.trip?.routeId ?? null,
+            lat, lon, speed: speed ?? 0,
+            bearing: calculatedBearing ?? null
+        });
+    }
+    return result;
+}
+
+async function _fetchAllTripDetailsForFeed(feedName) {
+    const url = `/api/getLineBrigadeDelayForTrip.json?city=${window.CITY_NAME}` +
+                `&feed_name=${encodeURIComponent(feedName)}` +
+                `&date=${_todayDate()}`;
+    try {
+        const r = await fetch(url);
+        if (!r.ok) return;
+        const data = await r.json();
+        for (const trip of (data.trips || [])) {
+            const key = `${feedName}:${trip.trip_id}`;
+            if (!tripDetailsCache[key]) tripDetailsCache[key] = trip;
+        }
+    } catch (e) {
+        console.error('Błąd batch getLineBrigadeDelayForTrip:', e);
+    }
+}
+
+async function refreshVehicles() {
+    if (!window.GTFS_FEEDS || window.GTFS_FEEDS.length === 0) return;
+
+    const s = loadSettings();
+    const activeKeys = new Set();
+
+    // 1. Pobierz dane realtime ze wszystkich feedów równolegle
+    const feedResults = await Promise.allSettled(
+        window.GTFS_FEEDS.map(async feed => {
+            const r = await fetch(
+                `/api/getParsedRealtimeForFeed.json?feed_name=${encodeURIComponent(feed.name)}`
+            );
+            if (!r.ok) throw new Error(`HTTP ${r.status} dla feeda ${feed.name}`);
+            const data = await r.json();
+            if (!data.realtime_available) return [];
+            return _parseGtfsRtJson(feed.name, data);
+        })
+    );
+
+    const allVehicles = feedResults.flatMap(res =>
+        res.status === 'fulfilled' ? res.value : []
+    );
+
+    // 2. Dla każdego feeda, który ma pojazdy z trip_id - pobierz batch tripów (jeśli cache pusty)
+    const feedsNeedingTrips = new Set(
+        allVehicles.filter(v => v.trip_id).map(v => v.feed_name)
+    );
+    await Promise.allSettled(
+        [...feedsNeedingTrips].map(feedName => {
+            const hasCached = Object.keys(tripDetailsCache).some(k => k.startsWith(feedName + ':'));
+            if (hasCached) return Promise.resolve();
+            return _fetchAllTripDetailsForFeed(feedName);
+        })
+    );
+
+    // 3. Renderuj znaczniki
+    for (const v of allVehicles) {
+        const key = `${v.feed_name}:${v.vehicle_id ?? v.trip_id ?? Math.random()}`;
+        activeKeys.add(key);
+
+        let routeShortName = null, blockId = null, routeType = 3, colorHex = null;
+
+        if (v.trip_id) {
+            const trip = tripDetailsCache[`${v.feed_name}:${v.trip_id}`] ?? null;
+            if (trip) {
+                routeShortName = trip.route_id || null;
+                blockId        = trip.block_id || null;
+                const resolvedRouteId = trip.route_id || v.route_id;
+                if (resolvedRouteId) {
+                    const route = await _fetchRouteDetails(resolvedRouteId, v.feed_name);
+                    if (route) {
+                        colorHex  = route.color     || null;
+                        routeType = route.route_type != null ? route.route_type : 3;
+                    }
+                }
+            } else if (v.route_id) {
+                const route = await _fetchRouteDetails(v.route_id, v.feed_name);
+                if (route) {
+                    routeShortName = route.route_short_name || v.route_id;
+                    colorHex  = route.color     || null;
+                    routeType = route.route_type != null ? route.route_type : 3;
+                }
+            }
+        }
+
+        // FIX: jeśli nowy bearing jest null, użyj ostatniego zapamiętanego dla tego pojazdu
+        const effectiveBearing = v.bearing != null ? v.bearing : (vehicleBearings[key] ?? null);
+        // Zaktualizuj cache bearingu tylko gdy dostajemy nową wartość
+        if (v.bearing != null) {
+            vehicleBearings[key] = v.bearing;
+        }
+
+        const { html, bg } = buildVehicleMarkerHTML(
+            routeShortName, blockId, v.vehicle_id,
+            routeType, colorHex, effectiveBearing, s
+        );
+        const dotHtml  = buildVehicleDotHTML(bg);
+        const fullMode = mapa.getZoom() > 14;
+        const displayHtml = fullMode ? html : dotHtml;
+
+        // Store meta for zoom-level switching
+        vehicleMarkerMeta[key] = { fullHtml: html, dotHtml };
+
+        if (vehicleMarkers[key]) {
+            // Update HTML content (respecting current zoom mode)
+            vehicleMarkers[key].getElement().innerHTML = displayHtml;
+
+            // Animate position smoothly from last known position to new one
+            const prev = vehiclePositions[key];
+            if (prev) {
+                animateMarkerTo(vehicleMarkers[key], prev.lat, prev.lon, v.lat, v.lon);
+            } else {
+                vehicleMarkers[key].setLngLat([v.lon, v.lat]);
+            }
+        } else {
+            // First appearance – just place without animation
+            const el = document.createElement('div');
+            el.className = 'vehicle-custom-marker';
+            el.innerHTML = displayHtml;
+            const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+                .setLngLat([v.lon, v.lat])
+                .addTo(mapa);
+            // FIX: ustaw z-index 100 na elemencie znacznika pojazdu (wyższy niż przystanki = 1)
+            marker.getElement().style.zIndex = '100';
+            vehicleMarkers[key] = marker;
+        }
+
+        // Store current position for next refresh
+        vehiclePositions[key] = { lat: v.lat, lon: v.lon };
+    }
+
+    // 4. Usuń nieaktywne znaczniki
+    for (const key of Object.keys(vehicleMarkers)) {
+        if (!activeKeys.has(key)) {
+            vehicleMarkers[key].remove();
+            delete vehicleMarkers[key];
+            delete vehiclePositions[key];
+            delete vehicleMarkerMeta[key];
+            delete vehicleBearings[key];
+        }
+    }
+}
+
+// ════════════════════════════════════════
+//  MAP LOAD
+// ════════════════════════════════════════
+mapa.on('load', () => {
+    // Load stop markers from new unified endpoint
+    fetch(`/api/getStopsForCity.json?name=${window.CITY_NAME}`)
+        .then(r => r.json())
+        .then(async data => {
+            // 1. Zbierz unikalne feedy ze wszystkich przystanków
+            const uniqueFeeds = new Set();
+            for (const stop of (data.stops || [])) {
+                for (const route of (stop.routes || [])) {
+                    uniqueFeeds.add(route.feed);
+                }
+            }
+
+            // 2. Pobierz wszystkie trasy dla każdego feeda jednym zapytaniem
+            await Promise.allSettled(
+                [...uniqueFeeds].map(feed => _fetchAllRouteDetailsForFeed(feed))
+            );
+
+            // 3. Renderuj znaczniki przystanków
+            (data.stops || []).forEach(stop => {
+                // Wyciągnij route_type z cache; fallback → 3 (autobus)
+                const routeTypes = [...new Set(
+                    (stop.routes || []).map(r => {
+                        const cached = routeDetailsCache[`${r.feed}:${r.route_id}`];
+                        return (cached?.route_type != null) ? cached.route_type : 3;
+                    })
+                )];
+
+                const el = document.createElement('div');
+                el.innerHTML = createStopMarkerHTML(routeTypes);
+                el.className = 'custom-marker';
+                const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+                    .setLngLat([stop.lon, stop.lat])
+                    .setPopup(new maplibregl.Popup({ offset: 15 })
+                        .setHTML(`<strong>${stop.stop_name}</strong>`))
+                    .addTo(mapa);
+                // FIX: z-index 1 – poniżej znaczników pojazdów (100)
+                marker.getElement().style.zIndex = '1';
+                allStopMarkers.push(marker);
             });
-        }, 50);
-    }
 
-    mapa.on('load', function() {
-        fetch('/api/{{ city.name }}/stops/')
-            .then(response => response.json())
-            .then(data => {
-                data.stops.forEach(stop => {
-                    const el = document.createElement('div');
-                    el.innerHTML = createStopMarkerHTML(stop.route_types);
-                    el.className = 'custom-marker';
+            updateStopMarkersVisibility();
+        })
+        .catch(e => console.error('Błąd ładowania przystanków:', e));
 
-                    // Używamy kotwicy 'bottom' dla stabilniejszego pozycjonowania
-                    const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
-                        .setLngLat([stop.lon, stop.lat])
-                        .setPopup(new maplibregl.Popup({ offset: 15 }).setHTML(`<strong>${stop.name}</strong>`))
-                        .addTo(mapa);
+    // Start vehicle tracking (fetch immediately, then every 10 s)
+    refreshVehicles();
+    setInterval(refreshVehicles, 10_000);
+});
 
-                    allMarkers.push(marker);
-                });
-                updateMarkersVisibility();
-            })
-            .catch(error => console.error('Błąd ładowania przystanków:', error));
-    });
+mapa.on('zoom', updateStopMarkersVisibility);
+mapa.on('zoom', updateVehicleMarkersZoom);
 
-    mapa.on('zoom', updateMarkersVisibility);
+// ════════════════════════════════════════
+//  OVERLAY MANAGEMENT
+// ════════════════════════════════════════
+function _show(id) {
+    document.getElementById(id).classList.replace('overlay-hidden', 'overlay-visible');
+    lucide.createIcons();
+}
+function _hide(id) {
+    document.getElementById(id).classList.replace('overlay-visible', 'overlay-hidden');
+}
 
-    // Funkcje zarządzania widokami
-    function openMenu() {
-        document.getElementById('menu-overlay').classList.remove('overlay-hidden');
-        document.getElementById('menu-overlay').classList.add('overlay-visible');
-        lucide.createIcons();
-    }
-    function closeMenu() {
-        document.getElementById('menu-overlay').classList.remove('overlay-visible');
-        document.getElementById('menu-overlay').classList.add('overlay-hidden');
-    }
-    function openSchedules() { closeMenu(); document.getElementById('schedules-overlay').classList.remove('overlay-hidden'); document.getElementById('schedules-overlay').classList.add('overlay-visible'); lucide.createIcons(); }
-    function closeSchedules() { document.getElementById('schedules-overlay').classList.remove('overlay-visible'); document.getElementById('schedules-overlay').classList.add('overlay-hidden'); openMenu(); }
-    function openSettings() { closeMenu(); document.getElementById('settings-overlay').classList.remove('overlay-hidden'); document.getElementById('settings-overlay').classList.add('overlay-visible'); lucide.createIcons(); }
-    function closeSettings() { document.getElementById('settings-overlay').classList.remove('overlay-visible'); document.getElementById('settings-overlay').classList.add('overlay-hidden'); openMenu(); }
-    function openAbout() { closeMenu(); document.getElementById('about-overlay').classList.remove('overlay-hidden'); document.getElementById('about-overlay').classList.add('overlay-visible'); lucide.createIcons(); }
-    function closeAbout() { document.getElementById('about-overlay').classList.remove('overlay-visible'); document.getElementById('about-overlay').classList.add('overlay-hidden'); openMenu(); }
+function openMenu()      { _show('menu-overlay'); }
+function closeMenu()     { _hide('menu-overlay'); }
+
+function openSchedules() { closeMenu(); _show('schedules-overlay'); }
+function closeSchedules(){ _hide('schedules-overlay'); openMenu(); }
+
+function openSettings()  { applySettingsToUI(); closeMenu(); _show('settings-overlay'); }
+function closeSettings() { _hide('settings-overlay'); openMenu(); }
+
+function openAbout()     { closeMenu(); _show('about-overlay'); }
+function closeAbout()    { _hide('about-overlay'); openMenu(); }
 </script>
 
 </body>
