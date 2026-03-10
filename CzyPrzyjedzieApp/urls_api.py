@@ -13,6 +13,7 @@ urlpatterns = [
     # Rozkłady i kursy
     path("getScheduleForStop.json", api.get_schedule_for_stop),
     path("getTripDetails.json", api.get_trip_details),
+    path("getTripByVehicle.json", api.get_trip_by_vehicle),
 
     # Brygady
     path("getBlockScheduleForRoute.json", api.get_block_schedule_for_route),

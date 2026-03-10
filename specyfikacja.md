@@ -23,16 +23,17 @@ Dokumentacja endpointów HTTP oraz funkcji pomocniczych modułu `api.py`. Wszyst
 ## Spis treści
 
 - [Endpointy](#endpointy)
-  - [get_stops_for_city](#get_stops_for_city)
-  - [get_routes_for_city](#get_routes_for_city)
-  - [get_schedule_for_stop](#get_schedule_for_stop)
-  - [get_trip_details](#get_trip_details)
-  - [get_line_brigade_delay_for_trip](#get_line_brigade_delay_for_trip)
-  - [get_route_details](#get_route_details)
-  - [get_block_schedule_for_route](#get_block_schedule_for_route)
-  - [get_theoritical_block_details](#get_theoritical_block_details)
-  - [get_blocks_for_feed_and_date](#get_blocks_for_feed_and_date)
-  - [get_parsed_realtime_for_feed](#get_parsed_realtime_for_feed)
+  - [getStopsForCity.json](#getstopsforcityjson)
+  - [getRoutesForCity.json](#getroutesforcityjson)
+  - [getScheduleForStop.json](#getscheduleforstopjson)
+  - [getTripDetails.json](#gettripdetailsjson)
+  - [getLineBrigadeDelayForTrip.json](#getlinebrigadedelayfortripjson)
+  - [getTripByVehicle.json](#gettripbyvehiclejson)
+  - [getRouteDetails.json](#getroutedetailsjson)
+  - [getBlockScheduleForRoute.json](#getblockscheduleforroutejson)
+  - [getTheoriticalBlockDetails.json](#gettheoriticalblockdetailsjson)
+  - [getBlocksForFeedAndDate.json](#getblocksforfeedanddatejson)
+  - [getParsedRealtimeForFeed.json](#getparsedrealtimeforfeedjson)
 - [Typy danych i słownik pól](#typy-danych-i-słownik-pól)
 - [Kody błędów](#kody-błędów)
 - [Funkcje wewnętrzne](#funkcje-wewnętrzne)
@@ -41,7 +42,7 @@ Dokumentacja endpointów HTTP oraz funkcji pomocniczych modułu `api.py`. Wszyst
 
 ## Endpointy
 
-### get_stops_for_city
+### getStopsForCity.json
 
 Zwraca listę wszystkich przystanków dla danego miasta wraz z przypisanymi liniami.
 
@@ -54,7 +55,7 @@ Zwraca listę wszystkich przystanków dla danego miasta wraz z przypisanymi lini
 **Przykładowe żądanie**
 
 ```
-GET /api/stops/?name=Gdańsk
+GET /api/getStopsForCity.json?name=Gdańsk
 ```
 
 **Odpowiedź**
@@ -86,7 +87,7 @@ GET /api/stops/?name=Gdańsk
 
 ---
 
-### get_routes_for_city
+### getRoutesForCity.json
 
 Zwraca listę wszystkich linii komunikacyjnych dla danego miasta.
 
@@ -99,7 +100,7 @@ Zwraca listę wszystkich linii komunikacyjnych dla danego miasta.
 **Przykładowe żądanie**
 
 ```
-GET /api/routes/?name=Gdańsk
+GET /api/getRoutesForCity.json?name=Gdańsk
 ```
 
 **Odpowiedź**
@@ -121,7 +122,7 @@ GET /api/routes/?name=Gdańsk
 
 ---
 
-### get_schedule_for_stop
+### getScheduleForStop.json
 
 Zwraca rozkład jazdy dla konkretnego przystanku, wzbogacony o dane **realtime**.
 
@@ -135,7 +136,7 @@ Zwraca rozkład jazdy dla konkretnego przystanku, wzbogacony o dane **realtime**
 **Przykładowe żądanie**
 
 ```
-GET /api/schedule/?city=Gdańsk&stop_id=123
+GET /api/getScheduleForStop.json?city=Gdańsk&stop_id=123
 ```
 
 **Odpowiedź**
@@ -179,7 +180,7 @@ GET /api/schedule/?city=Gdańsk&stop_id=123
 
 ---
 
-### get_trip_details
+### getTripDetails.json
 
 Zwraca szczegóły kursu (lub wszystkich kursów dla danej daty) wraz z przystankami, kształtem trasy i danymi realtime.
 
@@ -200,8 +201,8 @@ Zwraca szczegóły kursu (lub wszystkich kursów dla danej daty) wraz z przystan
 **Przykładowe żądania**
 
 ```
-GET /api/trip/?city=Gdańsk&feed_name=ZTM_GDA&date=20250601&trip_id=trip_001
-GET /api/trip/?city=Gdańsk&feed_name=ZTM_GDA&date=20250601
+GET /api/getTripDetails.json?city=Gdańsk&feed_name=ZTM_GDA&date=20250601&trip_id=trip_001
+GET /api/getTripDetails.json?city=Gdańsk&feed_name=ZTM_GDA&date=20250601
 ```
 
 **Odpowiedź — tryb pojedynczy**
@@ -256,9 +257,9 @@ GET /api/trip/?city=Gdańsk&feed_name=ZTM_GDA&date=20250601
 
 ---
 
-### get_line_brigade_delay_for_trip
+### getLineBrigadeDelayForTrip.json
 
-Uproszczona wersja [`get_trip_details`](#get_trip_details) — zwraca wyłącznie bieżące opóźnienie kursu bez pełnych danych przystankowych.
+Uproszczona wersja [`getTripDetails.json`](#gettripdetailsjson) — zwraca wyłącznie bieżące opóźnienie kursu bez pełnych danych przystankowych.
 
 **Parametry zapytania**
 
@@ -272,7 +273,7 @@ Uproszczona wersja [`get_trip_details`](#get_trip_details) — zwraca wyłączni
 **Przykładowe żądanie**
 
 ```
-GET /api/delay/?city=Gdańsk&feed_name=ZTM_GDA&date=20250601&trip_id=trip_001
+GET /api/getLineBrigadeDelayForTrip.json?city=Gdańsk&feed_name=ZTM_GDA&date=20250601&trip_id=trip_001
 ```
 
 **Odpowiedź — tryb pojedynczy**
@@ -317,7 +318,72 @@ GET /api/delay/?city=Gdańsk&feed_name=ZTM_GDA&date=20250601&trip_id=trip_001
 
 ---
 
-### get_route_details
+### getTripByVehicle.json
+
+Zwraca szczegóły kursu aktualnie wykonywanego przez podany pojazd. Wyszukiwanie odbywa się przez feed **VehiclePositions** — endpoint odnajduje encję, w której `vehicle.vehicle.id` zgadza się z podanym `vehicle_id`, a następnie pobiera `trip_id` z pola `vehicle.trip.trip_id` i zwraca pełne dane kursu w formacie identycznym jak [`getTripDetails.json`](#gettripdetailsjson) w trybie pojedynczym.
+
+**Parametry zapytania**
+
+| Parametr | Wymagany | Opis |
+|----------|----------|------|
+| `feed_name` | ✅ | Nazwa feedu GTFS (np. `ZTM_GDA`) |
+| `vehicle_id` | ✅ | Identyfikator pojazdu (`vehicle.vehicle.id`, **nie** `label`) |
+
+> ⚠️ Wyszukiwanie odbywa się po polu `vehicle.vehicle.id`, a nie po `vehicle.vehicle.label`. W razie wątpliwości sprawdź surowe dane RT przez [`getParsedRealtimeForFeed.json`](#getparsedrealtimeforfeedjson).
+
+**Przykładowe żądanie**
+
+```
+GET /api/getTripByVehicle.json?feed_name=ZTM_GDA&vehicle_id=1234
+```
+
+**Odpowiedź — pojazd znaleziony**
+
+```json
+{
+  "trip_id": "trip_001",
+  "route_id": "1",
+  "block_id": "B01",
+  "headsign": "Oliwa",
+  "stops": [ /* lista stop_times ze statiku GTFS */ ],
+  "shape": [ /* punkty kształtu trasy */ ],
+  "realtime": {
+    "vehicle_number": "1234",
+    "lat": 54.356,
+    "lon": 18.643,
+    "stop_times": [
+      {
+        "stop_id": "123",
+        "stop_sequence": 1,
+        "scheduled_arrival": "08:15:00",
+        "scheduled_departure": "08:15:30",
+        "real_arrival": "08:17:00",
+        "real_departure": "08:17:30",
+        "delay_seconds": 90,
+        "status": "passed",
+        "source": "trip_update"
+      }
+    ]
+  }
+}
+```
+
+**Odpowiedź — pojazd nieaktywny lub brak danych** *(HTTP 404)*
+
+```json
+{
+  "feed_name": "ZTM_GDA",
+  "vehicle_id": "1234",
+  "found": false,
+  "message": "Pojazd nie jest aktualnie aktywny lub nie ma danych w VehiclePositions."
+}
+```
+
+> Struktura obiektu `realtime.stop_times` jest identyczna z odpowiedzią [`getTripDetails.json`](#gettripdetailsjson). Dane RT (TripUpdates, pozycja pojazdu) są przetwarzane przez tę samą funkcję `build_stop_times_with_realtime`, więc obowiązuje ta sama hierarchia źródeł i obsługa ujemnego `delay_seconds`.
+
+---
+
+### getRouteDetails.json
 
 Zwraca szczegóły linii komunikacyjnej. Bez podania `route_id` zwraca listę wszystkich linii w feedzie.
 
@@ -378,7 +444,7 @@ Zwraca szczegóły linii komunikacyjnej. Bez podania `route_id` zwraca listę ws
 
 ---
 
-### get_block_schedule_for_route
+### getBlockScheduleForRoute.json
 
 Zwraca mapę brygad (bloków) dla danej linii z przypisanymi kursami pogrupowanymi wg dat.
 
@@ -393,7 +459,7 @@ Zwraca mapę brygad (bloków) dla danej linii z przypisanymi kursami pogrupowany
 **Przykładowe żądanie**
 
 ```
-GET /api/block-schedule/?city=Gdańsk&feed_name=ZTM_GDA&route_id=1
+GET /api/getBlockScheduleForRoute.json?city=Gdańsk&feed_name=ZTM_GDA&route_id=1
 ```
 
 **Odpowiedź**
@@ -414,7 +480,7 @@ GET /api/block-schedule/?city=Gdańsk&feed_name=ZTM_GDA&route_id=1
 
 ---
 
-### get_theoritical_block_details
+### getTheoriticalBlockDetails.json
 
 Zwraca szczegółowy plan dnia dla danej brygady (bloku), opcjonalnie filtrowany do konkretnej daty.
 
@@ -459,7 +525,7 @@ Zwraca szczegółowy plan dnia dla danej brygady (bloku), opcjonalnie filtrowany
 
 ---
 
-### get_blocks_for_feed_and_date
+### getBlocksForFeedAndDate.json
 
 Zwraca wszystkie brygady aktywne w danym feedzie w podanej dacie wraz z przypisanymi kursami posortowanymi chronologicznie.
 
@@ -503,7 +569,7 @@ Zwraca wszystkie brygady aktywne w danym feedzie w podanej dacie wraz z przypisa
 
 ---
 
-### get_parsed_realtime_for_feed
+### getParsedRealtimeForFeed.json
 
 Pobiera i parsuje wszystkie feedy realtime skonfigurowane dla danego `GTFSFeed`, a następnie łączy je w jeden ujednolicony JSON kompatybilny z **GTFS-RT**.
 

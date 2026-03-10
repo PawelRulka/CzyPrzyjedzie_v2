@@ -28,7 +28,7 @@
             <b>w czasie rzeczywistym:</b>
         </p>
 
-        {% for city in cities %}
+        {% for city in cities|dictsort:"display_name" %}
 <a href="{% url 'city_detail' city.name %}" class="city-button">
 
     <span class="flag">{{ city.country_icon }}</span>

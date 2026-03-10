@@ -996,6 +996,126 @@ def get_line_brigade_delay_for_trip(request):
 
 
 @require_GET
+def get_trip_by_vehicle(request):
+    """
+    Zwraca szczegóły kursu aktualnie wykonywanego przez podany pojazd.
+
+    Wyszukiwanie odbywa się przez VehiclePositions feed — szukamy encji
+    gdzie vehicle.vehicle.id == vehicle_id (nie label!), a następnie
+    pobieramy trip_id z pola vehicle.trip.trip_id i zwracamy pełne dane
+    kursu identycznie jak getTripDetails.json (tryb pojedynczy).
+
+    Parametry:
+        feed_name  — wymagany
+        vehicle_id — wymagany (id pojazdu, np. "1234", nie label)
+    """
+    gtfs_loader.ensure_gtfs_loaded()
+
+    feed_name = request.GET.get("feed_name")
+    vehicle_id = request.GET.get("vehicle_id")
+
+    if not all([feed_name, vehicle_id]):
+        return error("Missing parameters: feed_name and vehicle_id are required")
+
+    feed_data = gtfs_loader.GTFS_DATA.get(feed_name)
+    if not feed_data:
+        return error("Feed not loaded", 404)
+
+    feed_obj = GTFSFeed.objects.filter(name=feed_name).first()
+    if not feed_obj:
+        return error(f"Feed '{feed_name}' not found", 404)
+
+    realtime = load_realtime(feed_obj)
+
+    # ------------------------------------------------------------------ #
+    # Znajdź trip_id dla danego vehicle_id w VehiclePositions             #
+    # ------------------------------------------------------------------ #
+    trip_id: str | None = None
+    vehicle_lat: float | None = None
+    vehicle_lon: float | None = None
+    vehicle_number: str | None = None
+
+    vp = realtime.get("vehicle_positions")
+
+    if isinstance(vp, gtfs_realtime_pb2.FeedMessage):
+        for entity in vp.entity:
+            if not entity.HasField("vehicle"):
+                continue
+            v = entity.vehicle
+            # Porównujemy vehicle.vehicle.id (nie label)
+            if v.vehicle.id == vehicle_id or entity.id == vehicle_id:
+                trip_id = v.trip.trip_id or None
+                vehicle_lat = v.position.latitude or None
+                vehicle_lon = v.position.longitude or None
+                vehicle_number = entity.id
+                break
+    elif vp is not None:
+        entities = vp if isinstance(vp, list) else vp.get("entity", [])
+        for entity in entities:
+            v = entity.get("vehicle", {})
+            veh_info = v.get("vehicle", {})
+            # Porównujemy vehicle.vehicle.id (nie label)
+            if veh_info.get("id") == vehicle_id or entity.get("id") == vehicle_id:
+                trip_id = v.get("trip", {}).get("trip_id")
+                pos = v.get("position", {})
+                vehicle_lat = pos.get("latitude")
+                vehicle_lon = pos.get("longitude")
+                vehicle_number = veh_info.get("id") or entity.get("id")
+                break
+
+    if not trip_id:
+        return JsonResponse({
+            "feed_name": feed_name,
+            "vehicle_id": vehicle_id,
+            "found": False,
+            "message": "Pojazd nie jest aktualnie aktywny lub nie ma danych w VehiclePositions.",
+        }, status=404)
+
+    # ------------------------------------------------------------------ #
+    # Zbuduj pełną odpowiedź identyczną z getTripDetails (tryb pojedynczy) #
+    # ------------------------------------------------------------------ #
+    trip_obj = next((t for t in feed_data.get("trips", []) if t.get("trip_id") == trip_id), None)
+
+    static_stops = sorted(
+        [st for st in feed_data.get("stop_times", []) if st.get("trip_id") == trip_id],
+        key=lambda x: int(x.get("stop_sequence", 0)),
+    )
+
+    shape_id = trip_obj.get("shape_id") if trip_obj else None
+    shape = [s for s in feed_data.get("shapes", []) if s.get("shape_id") == shape_id]
+
+    route_id = trip_obj.get("route_id") if trip_obj else None
+    block_id = (trip_obj.get("brigade") or trip_obj.get("block_id") or "N/A") if trip_obj else "N/A"
+
+    stops_by_id = {str(s["stop_id"]): s for s in feed_data.get("stops", [])}
+
+    trip_updates = extract_trip_updates_for_trip(realtime, trip_id)
+
+    rich_stop_times = build_stop_times_with_realtime(
+        static_stops=static_stops,
+        trip_updates=trip_updates,
+        vehicle_lat=vehicle_lat,
+        vehicle_lon=vehicle_lon,
+        stops_by_id=stops_by_id,
+    )
+
+    return JsonResponse({
+        "trip_id": trip_id,
+        "route_id": route_id,
+        "block_id": block_id,
+        "headsign": trip_obj.get("trip_headsign") if trip_obj else None,
+        "stops": static_stops,
+        "shape": shape,
+        "realtime": {
+            "vehicle_number": vehicle_number,
+            "lat": vehicle_lat,
+            "lon": vehicle_lon,
+            "stop_times": rich_stop_times,
+        },
+    })
+
+
+@require_GET
 def get_route_details(request):
     gtfs_loader.ensure_gtfs_loaded()
 
