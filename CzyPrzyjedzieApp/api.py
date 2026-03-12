@@ -293,18 +293,111 @@ def _resolve_delay_for_stop(
     if update is not None:
         dep = update.get("departure_delay")
         arr = update.get("arrival_delay")
-        # Jeśli wpis TU istnieje, ZAWSZE zwracamy source="trip_update".
-        # Gdy oba pola delay są None, traktujemy przystanek jako punktualny (delay=0).
-        # Wcześniej kod wypadał tu do fallbacku gdy delay=None, zwracając source="estimated"
-        # — przez co reguła passed+estimated zerowała dane dla przystanków z TripUpdates.
         delay = dep if dep is not None else (arr if arr is not None else 0)
         return delay, source_if_tu
 
-    # Brak wpisu TU dla tego przystanku — użyj fallbacku
     if fallback_delay is not None:
         return fallback_delay, source_if_fallback
 
     return 0, "static"
+
+
+# ---------------------------------------------------------------------------
+# Fallback shape z przystanków
+# ---------------------------------------------------------------------------
+
+def _generate_shape_from_stops(stops: list, stops_by_id: dict) -> list:
+    """
+    Generuje zastępczy kształt trasy (shape) na podstawie współrzędnych
+    przystanków. Używane gdy feed nie zawiera danych shapes dla danego kursu.
+
+    Zwraca listę punktów w formacie zgodnym z GTFS shapes.txt:
+        shape_id, shape_pt_lat, shape_pt_lon, shape_pt_sequence,
+        shape_dist_traveled (w km), generated (flaga pomocnicza)
+
+    Jeśli dla żadnego przystanku nie uda się pobrać współrzędnych,
+    zwraca pustą listę (bez zmiany zachowania w stosunku do braku shape).
+    """
+    shape = []
+    seq = 0
+    dist = 0.0
+    prev_lat: float | None = None
+    prev_lon: float | None = None
+
+    for st in sorted(stops, key=lambda x: int(x.get("stop_sequence", 0))):
+        sid = str(st.get("stop_id", ""))
+        info = stops_by_id.get(sid)
+        if not info:
+            continue
+        try:
+            lat = float(info["stop_lat"])
+            lon = float(info["stop_lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
+
+        if prev_lat is not None and prev_lon is not None:
+            dist += haversine(prev_lat, prev_lon, lat, lon)
+
+        shape.append({
+            "shape_id": "generated",
+            "shape_pt_lat": lat,
+            "shape_pt_lon": lon,
+            "shape_pt_sequence": seq,
+            "shape_dist_traveled": round(dist, 4),
+            "generated": True,
+        })
+        prev_lat, prev_lon = lat, lon
+        seq += 1
+
+    return shape
+
+
+def _vehicle_id_matches(candidate: str | None, query: str) -> bool:
+    """
+    Porównuje id pojazdu uwzględniając prefiksy w stylu "0/305"
+    oraz sufiksy encji w stylu "0/305-vehiclePosition".
+    Pasuje gdy:
+      - dokładne dopasowanie:          "305"  == "305"
+      - suffix po ukośniku:            "0/305" kończy się na "/305"
+      - suffix przed myślnikiem:       "0/305-vehiclePosition" → "0/305" → pasuje j.w.
+    """
+    if not candidate:
+        return False
+    if candidate == query:
+        return True
+    # Odetnij ewentualny sufiks encji (np. "-vehiclePosition", "-tripUpdate")
+    bare = candidate.split("-")[0]   # "0/305-vehiclePosition" → "0/305"
+    if bare == query:
+        return True
+    # Odetnij prefiks operatora (np. "0/305" → "305")
+    if bare.rsplit("/", 1)[-1] == query:
+        return True
+    return False
+
+
+def _headsign_or_last_stop(headsign: str | None, stops: list, stops_by_id: dict) -> str | None:
+    """
+    Zwraca headsign jeśli niepusty, w przeciwnym razie stop_name ostatniego
+    przystanku kursu (najwyższy stop_sequence). Jeśli nie uda się znaleźć
+    nazwy, zwraca None.
+    """
+    if headsign:
+        return headsign
+    if not stops:
+        return None
+    last_stop = max(stops, key=lambda x: int(x.get("stop_sequence", 0)))
+    info = stops_by_id.get(str(last_stop.get("stop_id", "")))
+    return info.get("stop_name") if info else None
+
+
+def _shape_or_fallback(shape: list, stops: list, stops_by_id: dict) -> list:
+    """
+    Zwraca shape jeśli niepuste, w przeciwnym razie generuje fallback
+    z przystanków. Centralny helper używany przez wszystkie endpointy.
+    """
+    if shape:
+        return shape
+    return _generate_shape_from_stops(stops, stops_by_id)
 
 
 # ---------------------------------------------------------------------------
@@ -354,13 +447,9 @@ def build_stop_times_with_realtime(
     has_position = vehicle_lat is not None and vehicle_lon is not None
     has_tu = bool(trip_updates)
 
-    # Lookups TripUpdates
     tu_by_seq, tu_by_sid = _build_tu_lookups(trip_updates) if has_tu else ({}, {})
-
-    # Ostatni znany delay z TripUpdates (do propagacji gdy TU niekompletny)
     last_tu_delay = _last_known_tu_delay(trip_updates) if has_tu else None
 
-    # Pozycja → indeks najbliższego przystanku i delay z pozycji
     nearest_idx = None
     pos_delay = None
     if has_position:
@@ -368,7 +457,6 @@ def build_stop_times_with_realtime(
         if nearest_idx is not None:
             pos_delay = _delay_from_position(stops, nearest_idx, now_s)
 
-    # Fallback delay — priorytet: pozycja > ostatni TU > None
     fallback_delay = pos_delay if pos_delay is not None else last_tu_delay
     fallback_source = "estimated" if pos_delay is not None else (
         "estimated" if last_tu_delay is not None else "static"
@@ -383,8 +471,6 @@ def build_stop_times_with_realtime(
         sched_arr_s = time_to_seconds(sched_arr)
         sched_dep_s = time_to_seconds(sched_dep)
 
-        # Wyznacz status przystanku
-        # Używamy nearest_idx jeśli jest dostępny (dokładniejsze niż czas)
         if nearest_idx is not None:
             if i < nearest_idx:
                 status = "passed"
@@ -393,21 +479,17 @@ def build_stop_times_with_realtime(
             else:
                 status = "upcoming"
         else:
-            # Brak pozycji — status na podstawie godziny (bufor 60 s)
             if sched_dep_s is not None and now_s > sched_dep_s + 60:
                 status = "passed"
             else:
                 status = "upcoming"
 
-        # Wyznacz delay i source
         delay, source = _resolve_delay_for_stop(
             seq, sid, tu_by_seq, tu_by_sid,
             fallback_delay=fallback_delay,
             source_if_fallback=fallback_source,
         )
 
-        # Oblicz real_* dla wszystkich przystanków (w tym 'passed') na podstawie delay.
-        # Ujemny delay = przed czasem — poprawne zachowanie.
         real_arr = seconds_to_time(sched_arr_s + delay) if sched_arr_s is not None else None
         real_dep = seconds_to_time(sched_dep_s + delay) if sched_dep_s is not None else None
 
@@ -471,13 +553,11 @@ def get_single_stop_realtime(
         "estimated" if last_tu_delay is not None else "static"
     )
 
-    # Indeks tego przystanku w posortowanej liście
     this_idx = next(
         (i for i, s in enumerate(stops_sorted) if int(s.get("stop_sequence", -1)) == stop_sequence),
         None,
     )
 
-    # Status
     if nearest_idx is not None and this_idx is not None:
         if this_idx < nearest_idx:
             status = "passed"
@@ -488,16 +568,12 @@ def get_single_stop_realtime(
     else:
         status = "passed" if (sched_dep_s is not None and now_s > sched_dep_s + 60) else "upcoming"
 
-    # Delay
     delay, source = _resolve_delay_for_stop(
         stop_sequence, str(stop_id), tu_by_seq, tu_by_sid,
         fallback_delay=fallback_delay,
         source_if_fallback=fallback_source,
     )
 
-    # Oblicz real_* dla wszystkich przystanków (w tym 'passed').
-    # Dla estymacji: propagujemy bieżące opóźnienie — przybliżenie, ale lepsza
-    # informacja niż None.
     real_arr = seconds_to_time(sched_arr_s + delay) if sched_arr_s is not None else None
     real_dep = seconds_to_time(sched_dep_s + delay) if sched_dep_s is not None else None
 
@@ -639,7 +715,6 @@ def get_schedule_for_stop(request):
         if not feed_data:
             continue
 
-        # Ładuj realtime raz dla całego feedu
         feed_obj = GTFSFeed.objects.filter(name=feed.name).first()
         realtime = load_realtime(feed_obj) if feed_obj else {}
 
@@ -649,10 +724,8 @@ def get_schedule_for_stop(request):
         calendar_dates = feed_data.get("calendar_dates", [])
         service_dates_map = _build_service_dates_map(services_by_id, calendar_dates, today)
 
-        # stops_by_id potrzebne do haversine w get_single_stop_realtime
         stops_by_id = {str(s["stop_id"]): s for s in feed_data.get("stops", [])}
 
-        # Grupuj stop_times wg trip_id (potrzebne do get_single_stop_realtime)
         stop_times_by_trip: dict[str, list] = {}
         for st in feed_data.get("stop_times", []):
             tid = st.get("trip_id")
@@ -678,7 +751,6 @@ def get_schedule_for_stop(request):
             sched_dep = st.get("departure_time", "")
             stop_seq = int(st.get("stop_sequence", 0))
 
-            # Oblicz dane RT dla tego przystanku w tym kursie
             rt_info = get_single_stop_realtime(
                 trip_id=trip_id,
                 stop_id=stop_id,
@@ -732,11 +804,15 @@ def get_trip_details(request):
         - estymacja z pozycji pojazdu (haversine + propagacja opóźnienia)
         - dane statyczne jako ostateczny fallback
     Ujemny delay_seconds oznacza jazdę przed czasem.
+
+    Shape:
+        Gdy feed nie zawiera shapes dla kursu, generowany jest fallback
+        z prostych linii między przystankami (shape[*].generated == true).
     """
     gtfs_loader.ensure_gtfs_loaded()
 
     city = request.GET.get("city")
-    trip_id = request.GET.get("trip_id")   # opcjonalny
+    trip_id = request.GET.get("trip_id")
     feed_name = request.GET.get("feed_name")
     date = request.GET.get("date")
 
@@ -747,7 +823,6 @@ def get_trip_details(request):
     if not feed_data:
         return error("Feed not loaded", 404)
 
-    # Wspólne dane słownikowe — budujemy raz niezależnie od trybu
     stops_by_id = {str(s["stop_id"]): s for s in feed_data.get("stops", [])}
     routes_by_id = {r["route_id"]: r for r in feed_data.get("routes", [])}
     shapes_by_id: dict[str, list] = {}
@@ -757,7 +832,6 @@ def get_trip_details(request):
             shapes_by_id[sid] = []
         shapes_by_id[sid].append(s)
 
-    # stop_times zgrupowane wg trip_id (potrzebne w obu trybach)
     stop_times_by_trip: dict[str, list] = {}
     for st in feed_data.get("stop_times", []):
         tid = st.get("trip_id")
@@ -791,14 +865,20 @@ def get_trip_details(request):
             stops_by_id=stops_by_id,
         )
 
+        shape = _shape_or_fallback(
+            shapes_by_id.get(shape_id, []),
+            static_stops,
+            stops_by_id,
+        )
+
         return {
             "trip_id": tid,
             "date": date,
             "route_id": route_id,
             "block_id": block_id,
-            "headsign": t_obj.get("trip_headsign"),
+            "headsign": _headsign_or_last_stop(t_obj.get("trip_headsign"), static_stops, stops_by_id),
             "stops": static_stops,
-            "shape": shapes_by_id.get(shape_id, []),
+            "shape": shape,
             "realtime": {
                 "vehicle_number": vehicle_data.get("vehicle_number"),
                 "lat": vehicle_data.get("lat"),
@@ -831,7 +911,6 @@ def get_trip_details(request):
     calendar_dates = feed_data.get("calendar_dates", [])
     service_dates_map = _build_service_dates_map(services_by_id, calendar_dates, selected_date)
 
-    # Zbierz trip_id aktywne w wybranej dacie
     active_trip_ids: set[str] = set()
     for t in feed_data.get("trips", []):
         service_id = t.get("service_id")
@@ -880,7 +959,7 @@ def get_line_brigade_delay_for_trip(request):
     gtfs_loader.ensure_gtfs_loaded()
 
     city = request.GET.get("city")
-    trip_id = request.GET.get("trip_id")   # opcjonalny
+    trip_id = request.GET.get("trip_id")
     feed_name = request.GET.get("feed_name")
     date = request.GET.get("date")
 
@@ -906,14 +985,6 @@ def get_line_brigade_delay_for_trip(request):
     now_s = _current_time_seconds()
 
     def _build_delay_payload(t_obj: dict) -> dict:
-        """
-        Oblicza opóźnienie dla jednego kursu na podstawie danych realtime.
-
-        Hierarchia:
-          1. TripUpdates — delay z najbliższego nadchodzącego przystanku w TU
-          2. Pozycja pojazdu (haversine) — estymacja
-          3. Brak danych RT → delay_seconds = null
-        """
         tid = t_obj.get("trip_id")
         block_id = t_obj.get("brigade") or t_obj.get("block_id") or "N/A"
 
@@ -927,14 +998,12 @@ def get_line_brigade_delay_for_trip(request):
         rt_source: str | None = None
 
         if has_tu:
-            # Weź delay z ostatniego przystanku w TripUpdates który ma dane
             last_delay = _last_known_tu_delay(trip_updates)
             if last_delay is not None:
                 delay = last_delay
                 rt_source = "trip_update"
 
         if delay is None and has_position:
-            # Estymacja z pozycji pojazdu
             stops_sorted = sorted(
                 stop_times_by_trip.get(tid, []),
                 key=lambda x: int(x.get("stop_sequence", 0)),
@@ -1008,6 +1077,10 @@ def get_trip_by_vehicle(request):
     Parametry:
         feed_name  — wymagany
         vehicle_id — wymagany (id pojazdu, np. "1234", nie label)
+
+    Shape:
+        Gdy feed nie zawiera shapes dla kursu, generowany jest fallback
+        z prostych linii między przystankami (shape[*].generated == true).
     """
     gtfs_loader.ensure_gtfs_loaded()
 
@@ -1042,8 +1115,7 @@ def get_trip_by_vehicle(request):
             if not entity.HasField("vehicle"):
                 continue
             v = entity.vehicle
-            # Porównujemy vehicle.vehicle.id (nie label)
-            if v.vehicle.id == vehicle_id or entity.id == vehicle_id:
+            if _vehicle_id_matches(v.vehicle.id, vehicle_id) or _vehicle_id_matches(entity.id, vehicle_id):
                 trip_id = v.trip.trip_id or None
                 vehicle_lat = v.position.latitude or None
                 vehicle_lon = v.position.longitude or None
@@ -1054,8 +1126,7 @@ def get_trip_by_vehicle(request):
         for entity in entities:
             v = entity.get("vehicle", {})
             veh_info = v.get("vehicle", {})
-            # Porównujemy vehicle.vehicle.id (nie label)
-            if veh_info.get("id") == vehicle_id or entity.get("id") == vehicle_id:
+            if _vehicle_id_matches(veh_info.get("id"), vehicle_id) or _vehicle_id_matches(entity.get("id"), vehicle_id):
                 trip_id = v.get("trip", {}).get("trip_id")
                 pos = v.get("position", {})
                 vehicle_lat = pos.get("latitude")
@@ -1082,7 +1153,7 @@ def get_trip_by_vehicle(request):
     )
 
     shape_id = trip_obj.get("shape_id") if trip_obj else None
-    shape = [s for s in feed_data.get("shapes", []) if s.get("shape_id") == shape_id]
+    raw_shape = [s for s in feed_data.get("shapes", []) if s.get("shape_id") == shape_id]
 
     route_id = trip_obj.get("route_id") if trip_obj else None
     block_id = (trip_obj.get("brigade") or trip_obj.get("block_id") or "N/A") if trip_obj else "N/A"
@@ -1099,11 +1170,17 @@ def get_trip_by_vehicle(request):
         stops_by_id=stops_by_id,
     )
 
+    shape = _shape_or_fallback(raw_shape, static_stops, stops_by_id)
+
     return JsonResponse({
         "trip_id": trip_id,
         "route_id": route_id,
         "block_id": block_id,
-        "headsign": trip_obj.get("trip_headsign") if trip_obj else None,
+        "headsign": _headsign_or_last_stop(
+            trip_obj.get("trip_headsign") if trip_obj else None,
+            static_stops,
+            stops_by_id,
+        ),
         "stops": static_stops,
         "shape": shape,
         "realtime": {
@@ -1117,10 +1194,17 @@ def get_trip_by_vehicle(request):
 
 @require_GET
 def get_route_details(request):
+    """
+    Zwraca szczegóły linii wraz z kierunkami.
+
+    Shape dla każdego kierunku:
+        Gdy feed nie zawiera shapes, generowany jest fallback z prostych
+        linii między przystankami (shape[*].generated == true).
+    """
     gtfs_loader.ensure_gtfs_loaded()
 
     city = request.GET.get("city")
-    route_id = request.GET.get("route_id")   # opcjonalny
+    route_id = request.GET.get("route_id")
     feed_name = request.GET.get("feed_name")
 
     if not all([city, feed_name]):
@@ -1160,6 +1244,8 @@ def get_route_details(request):
     if not route:
         return error("Route not found", 404)
 
+    stops_by_id = {str(s["stop_id"]): s for s in feed_data.get("stops", [])}
+
     directions = {"0": {"headsign": None, "stops": [], "shape": []},
                   "1": {"headsign": None, "stops": [], "shape": []}}
     trips_for_route = [t for t in feed_data.get("trips", []) if t.get("route_id") == route_id]
@@ -1170,13 +1256,17 @@ def get_route_details(request):
             continue
         directions[direction_id]["headsign"] = dir_trips[0].get("trip_headsign")
         first_trip_id = dir_trips[0].get("trip_id")
-        directions[direction_id]["stops"] = [
+        dir_stops = [
             st for st in feed_data.get("stop_times", []) if st.get("trip_id") == first_trip_id
         ]
+        directions[direction_id]["stops"] = dir_stops
         shape_id = dir_trips[0].get("shape_id")
-        directions[direction_id]["shape"] = [
+        raw_shape = [
             s for s in feed_data.get("shapes", []) if s.get("shape_id") == shape_id
         ]
+        directions[direction_id]["shape"] = _shape_or_fallback(
+            raw_shape, dir_stops, stops_by_id
+        )
 
     return JsonResponse({
         "city": city,
@@ -1335,11 +1425,7 @@ def get_blocks_for_feed_and_date(request):
     calendar_dates = feed_data.get("calendar_dates", [])
     service_dates_map = _build_service_dates_map(services_by_id, calendar_dates, selected_date)
 
-    # Mapa trip_id → czas odjazdu z pierwszego przystanku (w sekundach).
-    # Używamy departure_time przy stop_sequence=0 (lub najniższej sekwencji).
-    # Pozwala to posortować kursy w bloku chronologicznie.
     first_departure_by_trip: dict[str, int] = {}
-    # Grupujemy stop_times wg trip_id, żeby znaleźć minimum stop_sequence
     trip_first_stop: dict[str, dict] = {}
     for st in feed_data.get("stop_times", []):
         tid = st.get("trip_id")
@@ -1367,12 +1453,9 @@ def get_blocks_for_feed_and_date(request):
             "route_id": trip.get("route_id"),
             "route_short_name": route.get("route_short_name") if route else None,
             "headsign": trip.get("trip_headsign"),
-            # _sort_key jest tymczasowy — usuwamy go przed zwróceniem
             "_sort_key": first_departure_by_trip.get(tid, 0),
         })
 
-    # Sortuj kursy w każdym bloku rosnąco wg czasu odjazdu z pierwszego
-    # przystanku, a następnie nadaj pole `order` (0-based index).
     for block_id, course_list in block_map.items():
         course_list.sort(key=lambda c: c["_sort_key"])
         for idx, course in enumerate(course_list):
@@ -1552,14 +1635,12 @@ def _pb_alert_to_dict(alert_entity) -> dict | None:
     al = alert_entity.alert
     out: dict = {}
 
-    # Active periods
     if al.active_period:
         out["activePeriod"] = [
             {k: v for k, v in [("start", p.start), ("end", p.end)] if v}
             for p in al.active_period
         ]
 
-    # Informed entities
     if al.informed_entity:
         informed = []
         for ie in al.informed_entity:
@@ -1577,7 +1658,6 @@ def _pb_alert_to_dict(alert_entity) -> dict | None:
             informed.append(e)
         out["informedEntity"] = informed
 
-    # Cause / effect
     if al.cause:
         out["cause"] = al.DESCRIPTOR.fields_by_name[
             "cause"].enum_type.values_by_number[al.cause].name
@@ -1645,7 +1725,6 @@ def _json_feed_to_entities(json_data: dict | list) -> tuple[dict | None, list]:
     Zwraca (header_dict or None, lista encji).
     """
     if isinstance(json_data, list):
-        # Niektóre feedy zwracają bezpośrednio tablicę encji
         return None, json_data
 
     header = json_data.get("header") or json_data.get("Header")
@@ -1687,7 +1766,6 @@ def get_parsed_realtime_for_feed(request):
     if not feed_obj:
         return error(f"Feed '{feed_name}' not found", 404)
 
-    # Sprawdź czy w ogóle jest jakikolwiek link RT
     has_any_rt = any([
         feed_obj.vehicle_positions_url,
         feed_obj.trip_updates_url,
@@ -1700,8 +1778,6 @@ def get_parsed_realtime_for_feed(request):
             "message": "Ten feed nie ma skonfigurowanych żadnych linków realtime.",
         })
 
-    # Pobierz i sparsuj każdy URL osobno, unikając duplikatów gdy ten sam URL
-    # jest podany w kilku polach (np. jeden plik zawiera wszystkie typy).
     seen_urls: set[str] = set()
     combined_header: dict | None = None
     combined_entities: list = []
@@ -1724,14 +1800,12 @@ def get_parsed_realtime_for_feed(request):
                 feed_pb.ParseFromString(resp.content)
                 hdr, entities = _pb_feed_to_entities(feed_pb)
 
-            # Zachowaj pierwszy napotkany header (zwykle wszystkie mają ten sam timestamp)
             if hdr and combined_header is None:
                 combined_header = hdr
 
             combined_entities.extend(entities)
 
         except Exception as exc:
-            # Nie przerywamy — logujemy brakujący feed jako pustą listę
             combined_entities.append({
                 "_error": f"Nie udało się pobrać {url}: {exc}"
             })
@@ -1740,16 +1814,9 @@ def get_parsed_realtime_for_feed(request):
     _fetch_and_parse(feed_obj.trip_updates_url)
     _fetch_and_parse(feed_obj.service_alerts_url)
 
-    # Usuń encje błędów z listy głównej, zbierz je osobno
     errors = [e["_error"] for e in combined_entities if "_error" in e]
     combined_entities = [e for e in combined_entities if "_error" not in e]
 
-    # --- Oblicz kierunek jazdy dla każdego pojazdu ---
-    # Dla każdego pojazdu (identyfikowanego przez vehicle.id lub entity.id):
-    #   1. Sprawdź czy w cache jest poprzednia pozycja.
-    #   2. Jeśli tak i pozycja jest inna → oblicz bearing i zapisz w encji.
-    #   3. Jeśli nie → bearing = None (pierwsza obserwacja, brak danych).
-    #   4. Zaktualizuj cache aktualną pozycją.
     feed_ts = (combined_header or {}).get("timestamp") or 0
 
     for entity in combined_entities:
@@ -1766,7 +1833,6 @@ def get_parsed_realtime_for_feed(request):
         if lat is None or lon is None:
             continue
 
-        # Klucz cache: feed_name + id pojazdu (vehicle.vehicle.id albo entity.id)
         veh_info = vehicle_block.get("vehicle") or {}
         vehicle_id = veh_info.get("id") or entity.get("id") or "unknown"
         cache_key = f"{feed_name}:{vehicle_id}"
@@ -1774,14 +1840,11 @@ def get_parsed_realtime_for_feed(request):
         prev = _vehicle_position_cache.get(cache_key)
 
         if prev and (prev["lat"] != lat or prev["lon"] != lon):
-            # Mamy dwie różne pozycje → liczymy bearing
             bearing = _compute_bearing(prev["lat"], prev["lon"], lat, lon)
             position["calculatedBearing"] = round(bearing, 1)
         else:
-            # Pierwsza obserwacja lub pojazd się nie ruszył → brak danych
             position["calculatedBearing"] = None
 
-        # Zaktualizuj cache
         _vehicle_position_cache[cache_key] = {"lat": lat, "lon": lon, "ts": feed_ts}
 
     response: dict = {

@@ -14,9 +14,14 @@ def city_selection(request):
     return render(request, 'index.html', context)
 
 
-def city_detail(request, city_slug):
+def city_detail(request, city_slug, vehicle_id=None):
     city = get_object_or_404(City, name=city_slug)
-    return render(request, 'city_detail.html', {'city': city})
+    context = {
+        'city': city,
+        'selected_vehicle_id': vehicle_id,
+        'has_vehicle_view': bool(vehicle_id),
+    }
+    return render(request, 'city_detail.html', context)
 
 
 def get_stops_api(request, city_slug):
