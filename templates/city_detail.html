@@ -13,7 +13,7 @@
     <script>
         window.STATIC_URL = "{% get_static_prefix %}";
         window.CITY_NAME = "{{ city.name }}";
-        // All active GTFS feeds for this city
+        window.INITIAL_SELECTED_VEHICLE_ID = "{{ selected_vehicle_id|default_if_none:''|escapejs }}";
         window.GTFS_FEEDS = [{% for feed in city.feeds.all %}{% if feed.is_active %}{"name":"{{ feed.name|escapejs }}"}{% if not forloop.last %},{% endif %}{% endif %}{% endfor %}];
     </script>
     <style>
@@ -90,7 +90,6 @@
             gap: 5px; position: relative;
         }
 
-        /* Arrow inside the marker – left side */
         .vm-arrow-wrap {
             display: flex;
             align-items: center;
@@ -123,11 +122,388 @@
             border-radius: 50%;
             box-shadow: 0 1px 4px rgba(0,0,0,.5);
         }
-        /* Animate the outer wrapper when switching modes */
         .vehicle-custom-marker { transition: transform .25s ease; }
 
         /* ── Stop markers stay below vehicles ── */
         .custom-marker { z-index: 1 !important; }
+
+        /* ── Vehicle course panel (timeline) ── */
+        .vehicle-panel {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            justify-content: center;
+            pointer-events: none;
+            z-index: 200;
+        }
+        .vehicle-panel-card {
+            pointer-events: auto;
+            background: #212529;
+            border-radius: 20px 20px 0 0;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.75);
+            width: 100%;
+            max-width: 520px;
+            padding: 8px 16px 18px 16px;
+        }
+        .vehicle-panel-hidden {
+            display: none;
+        }
+
+        /* ── Drag handle ── */
+        .drag-handle {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 4px 0 8px 0;
+            cursor: ns-resize;
+            touch-action: none;
+            user-select: none;
+        }
+        .drag-handle-bar {
+            width: 36px;
+            height: 4px;
+            border-radius: 2px;
+            background: rgba(255,255,255,0.25);
+            transition: background 0.2s;
+        }
+        .drag-handle:active .drag-handle-bar,
+        .drag-handle:hover .drag-handle-bar {
+            background: rgba(255,255,255,0.5);
+        }
+
+        .vehicle-panel-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .vehicle-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 10px;
+            background: #43842B;
+            max-width: 40%;
+            white-space: nowrap;
+        }
+        .vehicle-badge-icon {
+            width: 18px;
+            height: 18px;
+            background-color: rgba(255,255,255,0.9);
+            flex-shrink: 0;
+        }
+        .vehicle-badge-line {
+            font-family: 'Roboto', sans-serif;
+            font-weight: 700;
+            font-size: 16px;
+            color: #FFFFFF;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .vehicle-headsign {
+            flex: 1;
+            font-family: 'Roboto', sans-serif;
+            font-weight: 700;
+            font-size: 16px;
+            color: #E7E8E8;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .vehicle-panel-buttons {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .vehicle-btn {
+            width: 30px;
+            height: 30px;
+            border-radius: 999px;
+            border: none;
+            padding: 0;
+            background: #343A40;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .vehicle-btn img {
+            width: 18px;
+            height: 18px;
+        }
+        .vehicle-btn[disabled] {
+            opacity: 0.4;
+            cursor: default;
+        }
+        .vehicle-panel-body {
+            margin-top: 6px;
+            background: #0E1014;
+            border-radius: 12px;
+            padding: 12px 14px;
+            overflow-y: auto;
+            transition: max-height 0.3s ease;
+        }
+        .vehicle-no-data {
+            font-family: 'Roboto', sans-serif;
+            font-size: 14px;
+            color: #B6BAB8;
+            padding: 4px 2px;
+        }
+
+        /* ── Timeline: single continuous line via ::before ── */
+        .vehicle-timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            position: relative;
+        }
+        /* The continuous vertical line running through all stops.
+           Column layout: 52px (time) + 10px (gap) + 20px (line col) → center at 52+10+10=72px
+           We offset by 2px (half of 4px bar width) → left: 70px */
+        .vehicle-timeline::before {
+            content: '';
+            position: absolute;
+            left: 70px;
+            top: 13px;   /* half of first stop row top area (~9px padding + 4px) */
+            bottom: 13px;
+            width: 4px;
+            background: var(--route-line-color, #43842B);
+            border-radius: 2px;
+            z-index: 0;
+        }
+
+        /* ── STOP ROW ── */
+        .vehicle-stop {
+            display: grid;
+            grid-template-columns: 52px 20px 1fr auto;
+            column-gap: 10px;
+            padding: 9px 0;
+            align-items: start;
+        }
+
+        /* Time column */
+        .vehicle-stop-times {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 1px;
+            padding-top: 2px;
+        }
+        .vehicle-stop-time {
+            font-family: 'Roboto', sans-serif;
+            font-size: 18px;
+            font-weight: 500;
+            color: #E7E8E8;
+            line-height: 1.2;
+        }
+        .vehicle-stop-time--passed {
+            font-size: 18px;
+            font-weight: 500;
+            color: #858687;
+        }
+        .vehicle-stop-time--planned-strike {
+            font-size: 18px;
+            font-weight: 500;
+            color: #C1C1BD;
+            text-decoration: line-through;
+        }
+        .vehicle-stop-time--late-main {
+            font-size: 18px;
+            font-weight: 500;
+            color: #FF6966;
+        }
+        .vehicle-stop-time--early-main {
+            font-size: 18px;
+            font-weight: 500;
+            color: #FF9500;
+        }
+
+        /* Vertical line + dot column */
+        .vehicle-stop-line {
+            position: relative;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding-top: 4px;
+        }
+        .vehicle-stop-dot {
+            position: relative;
+            width: 12px;
+            height: 12px;
+            border-radius: 999px;
+            background: #FFFFFF;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.6);
+            z-index: 1;
+        }
+        .vehicle-stop-dot--passed {
+            background: #858687;
+        }
+        .vehicle-stop-dot--current {
+            border: 2px solid #32631F;
+            background: #43842B;
+        }
+        .vehicle-stop-vehicle-icon {
+            position: absolute;
+            top: -5px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 20px;
+            height: 20px;
+            border-radius: 999px;
+            border: 2px solid #32631F;
+            background-color: #43842B;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2;
+        }
+        .vehicle-stop-vehicle-icon-inner {
+            width: 13px;
+            height: 13px;
+            background-color: rgba(255,255,255,0.9);
+        }
+
+        /* Name + status column */
+        .vehicle-stop-info {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            padding-top: 2px;
+        }
+        .vehicle-stop-name {
+            font-family: 'Roboto', sans-serif;
+            font-size: 18px;
+            font-weight: 500;
+            color: #E7E8E8;
+            line-height: 1.2;
+        }
+        .vehicle-stop-name--passed {
+            color: #858687;
+        }
+        .vehicle-stop-status-row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-top: 1px;
+        }
+        .vehicle-stop-status-icon {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+        .vehicle-stop-status {
+            font-family: 'Roboto', sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .vehicle-stop-status--ontime  { color: #65E765; }
+        .vehicle-stop-status--late    { color: #FF6966; }
+        .vehicle-stop-status--early   { color: #FF9500; }
+        .vehicle-stop-status--static  { color: #B6BAB8; }
+        .vehicle-stop-status--passed  { color: #858687; }
+
+        /* ETA column */
+        .vehicle-stop-eta {
+            font-family: 'Roboto', sans-serif;
+            font-size: 18px;
+            font-weight: 500;
+            color: #E7E8E8;
+            white-space: nowrap;
+            padding-top: 2px;
+        }
+
+        /* Trip stops on map */
+        .trip-stop-marker {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            /* anchor: center of dot sits on stop coordinates */
+            transform: translateY(-50%);
+        }
+        .trip-stop-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 999px;
+            background: #000000;
+            border: 2px solid #43842B;
+            flex-shrink: 0;
+        }
+        .trip-stop-label {
+            margin-top: 4px;
+            font-family: 'Roboto', sans-serif;
+            font-size: 13px;
+            font-weight: 700;
+            text-align: center;
+            white-space: nowrap;
+            /* Clean text outline using paint-order instead of -webkit-text-stroke */
+            paint-order: stroke fill;
+            -webkit-text-stroke: 0;
+            text-stroke: 0;
+        }
+
+        /* ── Vehicle tooltip (nad znacznikiem) ── */
+.vehicle-tooltip {
+    position: fixed;
+    z-index: 400;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transform: translate(-50%, calc(-100% - 18px));
+}
+.vehicle-tooltip-hidden { display: none !important; }
+.vt-body {
+    background: rgba(74, 79, 88, 0.6);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 12px;
+    padding: 0 18px;
+    height: 83px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    white-space: nowrap;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.45);
+}
+.vt-arrow {
+    width: 0; height: 0;
+    border-left: 10px solid transparent;
+    border-right: 10px solid transparent;
+    border-top: 10px solid rgba(74, 79, 88, 0.6);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    flex-shrink: 0;
+}
+.vt-title {
+    font-family: 'Roboto', sans-serif;
+    font-size: 16px;
+    font-weight: 400;
+    color: #FFFFFF;
+    line-height: 1.3;
+}
+.vt-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: 'Roboto', sans-serif;
+    font-size: 14px;
+    color: #C8CAD0;
+    line-height: 1.3;
+}
+.vt-icon {
+    width: 17px;
+    height: 17px;
+    flex-shrink: 0;
+}
+.vt-time-text {
+    font-style: italic;
+    color: #9A9DA6;
+}
     </style>
 </head>
 <body class="city-map-page">
@@ -161,6 +537,56 @@
     </div>
 </div>
 
+<!-- ══ VEHICLE TOOLTIP ══ -->
+<div id="vehicle-tooltip" class="vehicle-tooltip vehicle-tooltip-hidden">
+    <div class="vt-body">
+        <div class="vt-title" id="vt-title">—</div>
+        <div class="vt-row">
+            <img class="vt-icon" id="vt-speed-icon" alt="prędkość">
+            <span id="vt-speed">— km/h</span>
+        </div>
+        <div class="vt-row">
+            <img class="vt-icon" id="vt-clock-icon" alt="czas">
+            <em class="vt-time-text" id="vt-time">—</em>
+        </div>
+    </div>
+    <div class="vt-arrow"></div>
+</div>
+
+<!-- ══ VEHICLE COURSE PANEL ══ -->
+<div id="vehicle-course-panel" class="vehicle-panel vehicle-panel-hidden">
+    <div class="vehicle-panel-card">
+        <!-- Drag handle – swipe up/down to resize; drag to bottom closes the panel -->
+        <div class="drag-handle" id="vc-drag-handle">
+            <div class="drag-handle-bar"></div>
+        </div>
+        <div class="vehicle-panel-header">
+            <div id="vc-route-badge" class="vehicle-badge" style="background:#43842B;">
+                <div id="vc-route-icon" class="vehicle-badge-icon"></div>
+                <span id="vc-route-short-name" class="vehicle-badge-line">--</span>
+            </div>
+            <div id="vc-headsign" class="vehicle-headsign">Wybierz pojazd na mapie</div>
+            <div class="vehicle-panel-buttons">
+                <button id="vc-gps-btn" class="vehicle-btn" type="button">
+                    <img id="vc-gps-icon" src="{% static 'img/gps.png' %}" alt="GPS">
+                </button>
+                <button id="vc-more-btn" class="vehicle-btn" type="button">
+                    <img src="{% static 'img/dots.png' %}" alt="Więcej">
+                </button>
+                <button id="vc-close-btn" class="vehicle-btn" type="button">
+                    <img src="{% static 'img/close.png' %}" alt="Zamknij">
+                </button>
+            </div>
+        </div>
+        <div class="vehicle-panel-body" id="vc-panel-body">
+            <div id="vc-no-data" class="vehicle-no-data">
+                Wybierz pojazd na mapie, aby zobaczyć szczegóły kursu.
+            </div>
+            <div id="vc-timeline" class="vehicle-timeline" aria-live="polite"></div>
+        </div>
+    </div>
+</div>
+
 <!-- ══ MENU OVERLAY ══ -->
 <div id="menu-overlay" class="overlay-hidden">
     <div class="selection-card">
@@ -189,8 +615,7 @@
                 <div class="city-content"><div class="city-name-line">O stronie</div></div>
             </div>
         </div>
-{#        <p>Created by <b>pawlinski07</b></p>#}
-        <p class="subtitle">© OpenStreetMap contributors</p>
+        <p class="subtitle">© <a href="https://www.maptiler.com/copyright/" target="_blank" style="color:inherit;">MapTiler</a> © <a href="https://www.openstreetmap.org/copyright" target="_blank" style="color:inherit;">OpenStreetMap contributors</a></p>
     </div>
 </div>
 
@@ -213,7 +638,6 @@
 
         <div class="settings-scroll">
 
-            <!-- A. Znacznik pojazdu -->
             <div class="settings-section">
                 <div class="settings-section-title">Znacznik pojazdu</div>
 
@@ -257,7 +681,6 @@
                 </div>
             </div>
 
-            <!-- B. Zachowanie aplikacji -->
             <div class="settings-section">
                 <div class="settings-section-title">Zachowanie aplikacji</div>
 
@@ -275,6 +698,15 @@
                     <label class="toggle-switch">
                         <input type="checkbox" id="s-user-timezone"
                                onchange="saveSetting('userTimezone', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item">
+                    <span class="setting-label">Pokazuj sekundy</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="s-show-seconds"
+                               onchange="saveSetting('showSeconds', this.checked)">
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
@@ -301,7 +733,6 @@
                 </div>
             </div>
 
-            <!-- C. Język -->
             <div class="settings-section">
                 <div class="settings-section-title">Język</div>
                 <div class="lang-options">
@@ -335,6 +766,10 @@
             <p><b>CzyPrzyjedzie</b> to aplikacja do śledzenia komunikacji miejskiej w czasie rzeczywistym.</p>
             <p>Dzięki niej możesz sprawdzić, gdzie aktualnie znajdują się autobusy i tramwaje w Twoim mieście.</p>
             <p>Aplikacja jest w fazie rozwoju i będzie systematycznie rozbudowywana o nowe funkcje i miasta.</p>
+            <p style="margin-top:12px;font-size:12px;color:#aaa;">
+                Dane mapowe: © <a href="https://www.maptiler.com/copyright/" target="_blank" style="color:#aaa;">MapTiler</a>
+                © <a href="https://www.openstreetmap.org/copyright" target="_blank" style="color:#aaa;">OpenStreetMap contributors</a>
+            </p>
         </div>
         <div class="city-button" onclick="closeAbout()">
             <span class="menu-icon"><i data-lucide="arrow-left"></i></span>
@@ -349,6 +784,95 @@
 lucide.createIcons();
 
 // ════════════════════════════════════════
+//  PANEL DRAG (resize + close on bottom)
+// ════════════════════════════════════════
+const PANEL_BODY_MIN_H = 175;  // ~3 stops visible
+const PANEL_BODY_MAX_H = Math.round(window.innerHeight * 0.55);
+
+// Apply initial (min) height
+(function initPanelHeight() {
+    const body = document.getElementById('vc-panel-body');
+    if (body) body.style.maxHeight = PANEL_BODY_MIN_H + 'px';
+})();
+
+function _setPanelBodyH(px, animated) {
+    const body = document.getElementById('vc-panel-body');
+    if (!body) return;
+    if (animated) {
+        body.style.transition = 'max-height 0.3s ease';
+        setTimeout(() => { body.style.transition = ''; }, 320);
+    } else {
+        body.style.transition = 'none';
+    }
+    body.style.maxHeight = Math.max(0, Math.min(PANEL_BODY_MAX_H, px)) + 'px';
+}
+
+(function initDrag() {
+    const handle  = document.getElementById('vc-drag-handle');
+    if (!handle) return;
+
+    let dragging  = false;
+    let startY    = 0;
+    let startH    = 0;
+
+    function getBodyH() {
+        const b = document.getElementById('vc-panel-body');
+        return b ? b.offsetHeight : PANEL_BODY_MIN_H;
+    }
+
+    function onStart(clientY) {
+        dragging = true;
+        startY   = clientY;
+        startH   = getBodyH();
+        document.body.style.userSelect = 'none';
+    }
+
+    function onMove(clientY) {
+        if (!dragging) return;
+        const dy = startY - clientY;   // drag up → positive → expand
+        _setPanelBodyH(startH + dy, false);
+    }
+
+    function onEnd(clientY) {
+        if (!dragging) return;
+        dragging = false;
+        document.body.style.userSelect = '';
+
+        const currentH = getBodyH();
+
+        // Close if dragged very low (below 30% of min height)
+        if (currentH < PANEL_BODY_MIN_H * 0.3) {
+            closeVehicleView();
+            return;
+        }
+
+        // Snap: halfway between min and max decides direction
+        const mid    = (PANEL_BODY_MIN_H + PANEL_BODY_MAX_H) / 2;
+        const snapTo = currentH >= mid ? PANEL_BODY_MAX_H : PANEL_BODY_MIN_H;
+        _setPanelBodyH(snapTo, true);
+    }
+
+    // Mouse
+    handle.addEventListener('mousedown', e => { onStart(e.clientY); e.preventDefault(); });
+    document.addEventListener('mousemove', e => { if (dragging) onMove(e.clientY); });
+    document.addEventListener('mouseup',   e => { if (dragging) onEnd(e.clientY); });
+
+    // Touch
+    handle.addEventListener('touchstart', e => {
+        onStart(e.touches[0].clientY);
+    }, { passive: true });
+    document.addEventListener('touchmove', e => {
+        if (!dragging) return;
+        onMove(e.touches[0].clientY);
+        e.preventDefault();   // prevent page scroll while dragging panel
+    }, { passive: false });
+    document.addEventListener('touchend', e => {
+        if (dragging) onEnd(e.changedTouches[0].clientY);
+    });
+})();
+
+
+// ════════════════════════════════════════
 //  SETTINGS
 // ════════════════════════════════════════
 const SETTINGS_KEY = 'czyprzyjezdzie_settings';
@@ -359,6 +883,7 @@ const DEFAULT_SETTINGS = {
     noShrinkMarkers:     false,
     useLastLocation:     false,
     userTimezone:        false,
+    showSeconds:         false,
     invertedPunctuality: false,
     sortByLocation:      false,
     language:            'pl'
@@ -397,6 +922,7 @@ function applySettingsToUI() {
     document.getElementById('s-no-shrink').checked           = s.noShrinkMarkers;
     document.getElementById('s-last-location').checked       = s.useLastLocation;
     document.getElementById('s-user-timezone').checked       = s.userTimezone;
+    document.getElementById('s-show-seconds').checked        = s.showSeconds;
     document.getElementById('s-inverted-punctuality').checked = s.invertedPunctuality;
     document.getElementById('s-sort-by-location').checked    = s.sortByLocation;
     _updateLangUI(s.language);
@@ -428,10 +954,10 @@ const mapa = new maplibregl.Map({
     container: 'mapa',
     style: 'https://api.maptiler.com/maps/019a2aeb-66d6-7ae1-8e66-ddc39a2d91ce/style.json?key=15p5ShrQcio1MZJsVG1w',
     center: _initCenter,
-    zoom:   _initZoom
+    zoom:   _initZoom,
+    attributionControl: false
 });
 
-// Persist last view
 mapa.on('moveend', () => {
     if (!loadSettings().useLastLocation) return;
     try {
@@ -454,6 +980,21 @@ const ROUTE_TYPE_CONFIG = {
     7:   { icon: 'funicular.png',  color: '#679BD4', name: 'Kolej zębata'  },
     800: { icon: 'trolleybus.png', color: '#7FA670', name: 'Trolejbus'     }
 };
+
+let currentVehicle = null;
+let currentVehicleTrip = null;
+let currentVehicleMarkerKey = null;
+let followVehicleEnabled = false;
+let vehicleTripRefreshTimer = null;
+let _pendingInitialScroll = false;  // autoscroll to current stop only on first open
+
+let currentTripStopMarkers = [];
+const TRIP_SHAPE_SOURCE_ID = 'current-trip-shape';
+const TRIP_SHAPE_LAYER_ID = 'current-trip-shape-line';
+
+const STOP_NAME_BY_ID = {};
+const STOP_CODE_BY_ID = {};
+const STOP_COORDS_BY_ID = {};
 
 // ════════════════════════════════════════
 //  STOP MARKERS
@@ -486,6 +1027,8 @@ function createStopMarkerHTML(routeTypes) {
 function updateStopMarkersVisibility() {
     clearTimeout(_zoomTimeout);
     _zoomTimeout = setTimeout(() => {
+        // When a vehicle course is open, base stop markers must stay hidden
+        if (currentVehicle) return;
         const show = mapa.getZoom() > 14;
         allStopMarkers.forEach(m => {
             m.getElement().style.display = show ? 'block' : 'none';
@@ -494,18 +1037,16 @@ function updateStopMarkersVisibility() {
 }
 
 let _vehicleZoomTimeout;
-/**
- * Switch vehicle markers between full and dot mode based on zoom level.
- * Threshold matches stop marker visibility (zoom > 14 = full, ≤ 14 = dot).
- */
 function updateVehicleMarkersZoom() {
     clearTimeout(_vehicleZoomTimeout);
     _vehicleZoomTimeout = setTimeout(() => {
-        const fullMode = mapa.getZoom() > 14;
+        const zoom = mapa.getZoom();
         for (const key of Object.keys(vehicleMarkers)) {
             const meta = vehicleMarkerMeta[key];
             if (!meta) continue;
             const el = vehicleMarkers[key].getElement();
+            const forceFull = key === currentVehicleMarkerKey;
+            const fullMode = zoom > 14 || forceFull;
             el.innerHTML = fullMode ? meta.fullHtml : meta.dotHtml;
         }
     }, 50);
@@ -514,18 +1055,14 @@ function updateVehicleMarkersZoom() {
 // ════════════════════════════════════════
 //  VEHICLE MARKERS
 // ════════════════════════════════════════
-const vehicleMarkers    = {};   // key → maplibre Marker
-const vehiclePositions  = {};   // key → { lat, lon } – last known position for animation
-const vehicleMarkerMeta = {};   // key → { fullHtml, dotHtml } – for zoom mode switching
-const vehicleBearings   = {};   // key → number – last known non-null bearing per vehicle  // FIX: persist bearing
-const tripDetailsCache  = {};   // "feed:tripId"   → object
-const routeDetailsCache = {};   // "feed:routeId"  → object
-const routeFeedFetched  = new Set(); // feeds already bulk-fetched
+const vehicleMarkers    = {};
+const vehiclePositions  = {};
+const vehicleMarkerMeta = {};
+const vehicleBearings   = {};
+const tripDetailsCache  = {};
+const routeDetailsCache = {};
+const routeFeedFetched  = new Set();
 
-/**
- * Build the minimalist dot HTML for a vehicle marker (used at low zoom levels).
- * Matches the background colour of the full marker.
- */
 function buildVehicleDotHTML(bg) {
     return `<div class="vm-dot" style="background:${bg};"></div>`;
 }
@@ -552,10 +1089,6 @@ async function _fetchTripDetails(tripId, feedName) {
     } catch (e) { return null; }
 }
 
-/**
- * Bulk-fetch all routes for a feed in one request and populate routeDetailsCache.
- * Subsequent calls for the same feed are no-ops (routeFeedFetched guard).
- */
 async function _fetchAllRouteDetailsForFeed(feedName) {
     if (routeFeedFetched.has(feedName)) return;
     routeFeedFetched.add(feedName);
@@ -571,13 +1104,10 @@ async function _fetchAllRouteDetailsForFeed(feedName) {
         }
     } catch (e) {
         console.error('Błąd bulk getRouteDetails:', e);
-        routeFeedFetched.delete(feedName); // pozwól na ponowną próbę
+        routeFeedFetched.delete(feedName);
     }
 }
 
-/**
- * Returns route details from cache, triggering a bulk feed fetch if needed.
- */
 async function _fetchRouteDetails(routeId, feedName) {
     const key = `${feedName}:${routeId}`;
     if (routeDetailsCache[key]) return routeDetailsCache[key];
@@ -585,13 +1115,6 @@ async function _fetchRouteDetails(routeId, feedName) {
     return routeDetailsCache[key] ?? null;
 }
 
-/**
- * Build the inner HTML for a vehicle marker.
- *
- * Strzałka kierunku jest teraz wewnątrz .vm-body, po lewej stronie jako .vm-arrow-wrap.
- * SVG strzałki obraca się wokół własnego środka zgodnie z bearingiem (0=N, 90=E itd.).
- * Gdy bearing === null – strzałka nie jest renderowana.
- */
 function buildVehicleMarkerHTML(routeShortName, blockId, vehicleId, routeType, colorHex, bearing, settings) {
     const cfg     = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
     const bg      = colorHex ? `#${colorHex}` : cfg.color;
@@ -626,12 +1149,7 @@ function buildVehicleMarkerHTML(routeShortName, blockId, vehicleId, routeType, c
 // ════════════════════════════════════════
 //  MARKER POSITION ANIMATION
 // ════════════════════════════════════════
-/**
- * Animate a MapLibre marker smoothly from one position to another.
- * Uses requestAnimationFrame with ease-in-out easing.
- */
 function animateMarkerTo(marker, fromLat, fromLon, toLat, toLon, duration = 1200) {
-    // Skip animation if distance is negligible
     const dlat = toLat - fromLat;
     const dlon = toLon - fromLon;
     if (Math.abs(dlat) < 1e-7 && Math.abs(dlon) < 1e-7) return;
@@ -655,20 +1173,14 @@ function animateMarkerTo(marker, fromLat, fromLon, toLat, toLon, duration = 1200
     requestAnimationFrame(step);
 }
 
-/**
- * Parse a single GTFS-RT JSON feed (already decoded from .pb → JSON by the server)
- * and return a flat list of vehicle objects.
- *
- * FIX: API returns camelCase (tripId, routeId) – was incorrectly read as snake_case.
- */
 function _parseGtfsRtJson(feedName, data) {
     const result = [];
     for (const entity of (data.entity || [])) {
         const v = entity.vehicle;
         if (!v || !v.position) continue;
         const { latitude: lat, longitude: lon, speed, calculatedBearing } = v.position;
+        const timestamp = v.timestamp ?? null;
         if (lat == null || lon == null) continue;
-        // Prefer label over id; treat missing/null/"N/A" as no vehicle number
         const rawId    = v.vehicle?.id    ?? entity.id ?? null;
         const rawLabel = v.vehicle?.label ?? null;
         let vehicleId = null;
@@ -679,14 +1191,14 @@ function _parseGtfsRtJson(feedName, data) {
         }
 
         result.push({
-            feed_name:  feedName,
-            vehicle_id: vehicleId,
-            // FIX: API uses camelCase (tripId / routeId), not snake_case
-            trip_id:    v.trip?.tripId  ?? null,
-            route_id:   v.trip?.routeId ?? null,
-            lat, lon, speed: speed ?? 0,
-            bearing: calculatedBearing ?? null
-        });
+    feed_name:  feedName,
+    vehicle_id: vehicleId,
+    trip_id:    v.trip?.tripId  ?? null,
+    route_id:   v.trip?.routeId ?? null,
+    lat, lon, speed: speed ?? 0,
+    bearing: calculatedBearing ?? null,
+    timestamp: timestamp,   // ← DODANE
+});
     }
     return result;
 }
@@ -714,7 +1226,6 @@ async function refreshVehicles() {
     const s = loadSettings();
     const activeKeys = new Set();
 
-    // 1. Pobierz dane realtime ze wszystkich feedów równolegle
     const feedResults = await Promise.allSettled(
         window.GTFS_FEEDS.map(async feed => {
             const r = await fetch(
@@ -731,7 +1242,6 @@ async function refreshVehicles() {
         res.status === 'fulfilled' ? res.value : []
     );
 
-    // 2. Dla każdego feeda, który ma pojazdy z trip_id - pobierz batch tripów (jeśli cache pusty)
     const feedsNeedingTrips = new Set(
         allVehicles.filter(v => v.trip_id).map(v => v.feed_name)
     );
@@ -743,39 +1253,41 @@ async function refreshVehicles() {
         })
     );
 
-    // 3. Renderuj znaczniki
     for (const v of allVehicles) {
         const key = `${v.feed_name}:${v.vehicle_id ?? v.trip_id ?? Math.random()}`;
         activeKeys.add(key);
 
-        let routeShortName = null, blockId = null, routeType = 3, colorHex = null;
+        let routeShortName = null, blockId = null, routeType = 3, colorHex = null, resolvedRouteId = null;
 
         if (v.trip_id) {
             const trip = tripDetailsCache[`${v.feed_name}:${v.trip_id}`] ?? null;
             if (trip) {
-                routeShortName = trip.route_id || null;
+                resolvedRouteId = trip.route_id || v.route_id;
                 blockId        = trip.block_id || null;
-                const resolvedRouteId = trip.route_id || v.route_id;
                 if (resolvedRouteId) {
                     const route = await _fetchRouteDetails(resolvedRouteId, v.feed_name);
                     if (route) {
+                        routeShortName = route.route_short_name || resolvedRouteId;
                         colorHex  = route.color     || null;
                         routeType = route.route_type != null ? route.route_type : 3;
+                    } else {
+                        routeShortName = resolvedRouteId;
                     }
                 }
             } else if (v.route_id) {
+                resolvedRouteId = v.route_id;
                 const route = await _fetchRouteDetails(v.route_id, v.feed_name);
                 if (route) {
                     routeShortName = route.route_short_name || v.route_id;
                     colorHex  = route.color     || null;
                     routeType = route.route_type != null ? route.route_type : 3;
+                } else {
+                    routeShortName = v.route_id;
                 }
             }
         }
 
-        // FIX: jeśli nowy bearing jest null, użyj ostatniego zapamiętanego dla tego pojazdu
         const effectiveBearing = v.bearing != null ? v.bearing : (vehicleBearings[key] ?? null);
-        // Zaktualizuj cache bearingu tylko gdy dostajemy nową wartość
         if (v.bearing != null) {
             vehicleBearings[key] = v.bearing;
         }
@@ -788,14 +1300,24 @@ async function refreshVehicles() {
         const fullMode = mapa.getZoom() > 14;
         const displayHtml = fullMode ? html : dotHtml;
 
-        // Store meta for zoom-level switching
-        vehicleMarkerMeta[key] = { fullHtml: html, dotHtml };
+        const markerMeta = {
+            feedName: v.feed_name,
+            vehicleId: v.vehicle_id ?? null,
+            tripId: v.trip_id ?? null,
+            routeId: resolvedRouteId ?? v.route_id ?? null,
+            routeShortName,
+            routeColor: colorHex,
+            routeType,
+            headsign: null,
+        };
+        vehicleMarkerMeta[key] = {
+    fullHtml: html, dotHtml, meta: markerMeta,
+    speed: v.speed ?? 0,
+    timestamp: v.timestamp ?? null,
+};
 
         if (vehicleMarkers[key]) {
-            // Update HTML content (respecting current zoom mode)
             vehicleMarkers[key].getElement().innerHTML = displayHtml;
-
-            // Animate position smoothly from last known position to new one
             const prev = vehiclePositions[key];
             if (prev) {
                 animateMarkerTo(vehicleMarkers[key], prev.lat, prev.lon, v.lat, v.lon);
@@ -803,23 +1325,39 @@ async function refreshVehicles() {
                 vehicleMarkers[key].setLngLat([v.lon, v.lat]);
             }
         } else {
-            // First appearance – just place without animation
             const el = document.createElement('div');
             el.className = 'vehicle-custom-marker';
             el.innerHTML = displayHtml;
+            el.onclick = () => openVehicleViewFromMarker(key);
             const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
                 .setLngLat([v.lon, v.lat])
                 .addTo(mapa);
-            // FIX: ustaw z-index 100 na elemencie znacznika pojazdu (wyższy niż przystanki = 1)
             marker.getElement().style.zIndex = '100';
             vehicleMarkers[key] = marker;
         }
 
-        // Store current position for next refresh
         vehiclePositions[key] = { lat: v.lat, lon: v.lon };
+        if (key === currentVehicleMarkerKey) _updateVehicleTooltip();
     }
 
-    // 4. Usuń nieaktywne znaczniki
+    if (currentVehicleMarkerKey && followVehicleEnabled) {
+        const pos = vehiclePositions[currentVehicleMarkerKey];
+        if (pos) {
+            mapa.easeTo({
+                center: [pos.lon, pos.lat],
+                duration: 800,
+            });
+        } else {
+            followVehicleEnabled = false;
+            updateGpsButtonState();
+            const noData = document.getElementById('vc-no-data');
+            if (noData) {
+                noData.textContent = 'Brak aktualnych danych o pojeździe.';
+                noData.style.display = 'block';
+            }
+        }
+    }
+
     for (const key of Object.keys(vehicleMarkers)) {
         if (!activeKeys.has(key)) {
             vehicleMarkers[key].remove();
@@ -835,11 +1373,9 @@ async function refreshVehicles() {
 //  MAP LOAD
 // ════════════════════════════════════════
 mapa.on('load', () => {
-    // Load stop markers from new unified endpoint
     fetch(`/api/getStopsForCity.json?name=${window.CITY_NAME}`)
         .then(r => r.json())
         .then(async data => {
-            // 1. Zbierz unikalne feedy ze wszystkich przystanków
             const uniqueFeeds = new Set();
             for (const stop of (data.stops || [])) {
                 for (const route of (stop.routes || [])) {
@@ -847,14 +1383,22 @@ mapa.on('load', () => {
                 }
             }
 
-            // 2. Pobierz wszystkie trasy dla każdego feeda jednym zapytaniem
             await Promise.allSettled(
                 [...uniqueFeeds].map(feed => _fetchAllRouteDetailsForFeed(feed))
             );
 
-            // 3. Renderuj znaczniki przystanków
             (data.stops || []).forEach(stop => {
-                // Wyciągnij route_type z cache; fallback → 3 (autobus)
+                if (stop.stop_id != null) {
+                    const sid = String(stop.stop_id);
+                    if (stop.stop_name) {
+                        STOP_NAME_BY_ID[sid] = stop.stop_name;
+                    }
+                    if (stop.stop_code != null && String(stop.stop_code).trim() !== '') {
+                        STOP_CODE_BY_ID[sid] = String(stop.stop_code);
+                    }
+                    STOP_COORDS_BY_ID[sid] = { lat: stop.lat, lon: stop.lon };
+                }
+
                 const routeTypes = [...new Set(
                     (stop.routes || []).map(r => {
                         const cached = routeDetailsCache[`${r.feed}:${r.route_id}`];
@@ -870,7 +1414,6 @@ mapa.on('load', () => {
                     .setPopup(new maplibregl.Popup({ offset: 15 })
                         .setHTML(`<strong>${stop.stop_name}</strong>`))
                     .addTo(mapa);
-                // FIX: z-index 1 – poniżej znaczników pojazdów (100)
                 marker.getElement().style.zIndex = '1';
                 allStopMarkers.push(marker);
             });
@@ -879,13 +1422,26 @@ mapa.on('load', () => {
         })
         .catch(e => console.error('Błąd ładowania przystanków:', e));
 
-    // Start vehicle tracking (fetch immediately, then every 10 s)
     refreshVehicles();
     setInterval(refreshVehicles, 10_000);
+
+    const initialId = (window.INITIAL_SELECTED_VEHICLE_ID || '').trim();
+    if (initialId) {
+        setTimeout(() => openVehicleViewFromUrl(initialId), 2000);
+    }
 });
 
 mapa.on('zoom', updateStopMarkersVisibility);
 mapa.on('zoom', updateVehicleMarkersZoom);
+mapa.on('dragstart', () => {
+    if (followVehicleEnabled) {
+        followVehicleEnabled = false;
+        updateGpsButtonState();
+    }
+});
+mapa.on('zoom', _updateTripStopLabelsVisibility);
+mapa.on('move', _updateVehicleTooltip);
+mapa.on('zoom', _updateVehicleTooltip);
 
 // ════════════════════════════════════════
 //  OVERLAY MANAGEMENT
@@ -909,6 +1465,740 @@ function closeSettings() { _hide('settings-overlay'); openMenu(); }
 
 function openAbout()     { closeMenu(); _show('about-overlay'); }
 function closeAbout()    { _hide('about-overlay'); openMenu(); }
+
+// ════════════════════════════════════════
+//  VEHICLE COURSE VIEW
+// ════════════════════════════════════════
+
+function _gtfsTimeToDate(timeStr) {
+    if (!timeStr) return null;
+    const parts = String(timeStr).split(':');
+    if (parts.length < 2) return null;
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) || 0;
+    const s = parts.length > 2 ? parseInt(parts[2], 10) || 0 : 0;
+    if (Number.isNaN(h) || Number.isNaN(m) || Number.isNaN(s)) return null;
+    const now = new Date();
+    const base = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const dayOffset = Math.floor(h / 24);
+    base.setDate(base.getDate() + dayOffset);
+    base.setHours(h % 24, m, s, 0);
+    return base;
+}
+
+function _formatEtaLabel(targetDate) {
+    if (!targetDate) return null;
+    const now = new Date();
+    const diffMs = targetDate - now;
+    if (diffMs <= 0) return null;
+    const diffMin = diffMs / 60000;
+    if (diffMin <= 1) return '<1 min.';
+    return `${Math.ceil(diffMin)} min.`;
+}
+
+function _statusMapping(delaySeconds, status, source, hasRealtimePosition) {
+    if (status === 'passed') {
+        return {
+            label: 'Odjechał',
+            className: 'vehicle-stop-status--passed',
+            icon: hasRealtimePosition ? 'vp_ontime.png' : 'no_realtime.png',
+        };
+    }
+
+    if (source === 'static') {
+        return {
+            label: 'Brak danych realtime',
+            className: 'vehicle-stop-status--static',
+            icon: 'no_realtime.png',
+        };
+    }
+
+    const hasVp  = hasRealtimePosition;
+    const prefix = hasVp ? 'vp_' : 'no_vp_';
+    const showSec = loadSettings().showSeconds;
+
+    // On-time: -59..+59 s
+    if (delaySeconds == null || (delaySeconds > -60 && delaySeconds < 60)) {
+        return {
+            label: 'Planowo',
+            className: 'vehicle-stop-status--ontime',
+            icon: `${prefix}ontime.png`,
+        };
+    }
+
+    const absSec = Math.abs(delaySeconds);
+    const mins   = Math.floor(absSec / 60);
+    const secs   = absSec % 60;
+
+    if (delaySeconds > 0) {
+        const label = showSec
+            ? (secs > 0 ? `Opóźniony ${mins} min i ${secs} s` : `Opóźniony ${mins} min`)
+            : `Opóźniony ${mins} min`;
+        return { label, className: 'vehicle-stop-status--late', icon: `${prefix}late.png` };
+    }
+
+    const label = showSec
+        ? (secs > 0 ? `${mins} min i ${secs} s przed czasem` : `${mins} min przed czasem`)
+        : `${mins} min przed czasem`;
+    return { label, className: 'vehicle-stop-status--early', icon: `${prefix}early.png` };
+}
+
+function _darkenColor(hex, factor) {
+    if (!hex || typeof hex !== 'string' || hex[0] !== '#' || (hex.length !== 7 && hex.length !== 4)) {
+        return hex || '#32631F';
+    }
+    let r, g, b;
+    if (hex.length === 7) {
+        r = parseInt(hex.slice(1, 3), 16);
+        g = parseInt(hex.slice(3, 5), 16);
+        b = parseInt(hex.slice(5, 7), 16);
+    } else {
+        r = parseInt(hex[1] + hex[1], 16);
+        g = parseInt(hex[2] + hex[2], 16);
+        b = parseInt(hex[3] + hex[3], 16);
+    }
+    const k = typeof factor === 'number' ? factor : 0.8;
+    r = Math.max(0, Math.min(255, Math.round(r * k)));
+    g = Math.max(0, Math.min(255, Math.round(g * k)));
+    b = Math.max(0, Math.min(255, Math.round(b * k)));
+    const toHex = (v) => v.toString(16).padStart(2, '0');
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function updateGpsButtonState() {
+    const gpsBtn = document.getElementById('vc-gps-btn');
+    const gpsIcon = document.getElementById('vc-gps-icon');
+    if (!gpsBtn || !gpsIcon) return;
+    if (!currentVehicleTrip || !currentVehicleTrip.realtime || currentVehicleTrip.realtime.lat == null || currentVehicleTrip.realtime.lon == null) {
+        gpsBtn.style.display = 'none';
+        return;
+    }
+    gpsBtn.style.display = 'flex';
+    if (followVehicleEnabled) {
+        gpsIcon.src = window.STATIC_URL + 'img/gps.png';
+    } else {
+        gpsIcon.src = window.STATIC_URL + 'img/gps_bez_kolka_w_srodku.png';
+    }
+}
+
+function _clearTripOverlays() {
+    currentTripStopMarkers.forEach(m => m.remove());
+    currentTripStopMarkers = [];
+
+    // Remove layer first, then source – prevents async race where the shape
+    // reappears with a default colour after closeVehicleView()
+    try { if (mapa.getLayer(TRIP_SHAPE_LAYER_ID)) mapa.removeLayer(TRIP_SHAPE_LAYER_ID); } catch (e) {}
+    try { if (mapa.getSource(TRIP_SHAPE_SOURCE_ID)) mapa.removeSource(TRIP_SHAPE_SOURCE_ID); } catch (e) {}
+}
+
+function _ensureTripShapeLayer(lineColor) {
+    if (!mapa.getSource(TRIP_SHAPE_SOURCE_ID)) {
+        mapa.addSource(TRIP_SHAPE_SOURCE_ID, {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [] },
+        });
+    }
+    if (!mapa.getLayer(TRIP_SHAPE_LAYER_ID)) {
+        mapa.addLayer({
+            id: TRIP_SHAPE_LAYER_ID,
+            type: 'line',
+            source: TRIP_SHAPE_SOURCE_ID,
+            paint: {
+                'line-color': lineColor,
+                'line-width': 4,
+            },
+        });
+    } else {
+        mapa.setPaintProperty(TRIP_SHAPE_LAYER_ID, 'line-color', lineColor);
+        mapa.setPaintProperty(TRIP_SHAPE_LAYER_ID, 'line-width', 4);
+    }
+}
+
+function _renderTripShape(shapePoints, lineColor) {
+    if (!Array.isArray(shapePoints) || shapePoints.length === 0) {
+        const src = mapa.getSource(TRIP_SHAPE_SOURCE_ID);
+        if (src && src.setData) {
+            src.setData({ type: 'FeatureCollection', features: [] });
+        }
+        return;
+    }
+
+    _ensureTripShapeLayer(lineColor);
+
+    const sorted = [...shapePoints].sort((a, b) =>
+        Number(a.shape_pt_sequence || 0) - Number(b.shape_pt_sequence || 0)
+    );
+    const coords = sorted
+        .map(p => {
+            const lat = parseFloat(p.shape_pt_lat);
+            const lon = parseFloat(p.shape_pt_lon);
+            if (Number.isNaN(lat) || Number.isNaN(lon)) return null;
+            return [lon, lat];
+        })
+        .filter(Boolean);
+
+    const src = mapa.getSource(TRIP_SHAPE_SOURCE_ID);
+    if (src && coords.length > 1) {
+        src.setData({
+            type: 'FeatureCollection',
+            features: [
+                {
+                    type: 'Feature',
+                    geometry: { type: 'LineString', coordinates: coords },
+                    properties: {},
+                },
+            ],
+        });
+    }
+}
+
+function _renderTripStops(tripStops, lineColor) {
+    currentTripStopMarkers.forEach(m => m.remove());
+    currentTripStopMarkers = [];
+
+    if (!Array.isArray(tripStops) || tripStops.length === 0) return;
+
+    const strokeColor = '#000000';
+
+    for (const st of tripStops) {
+        const sid = String(st.stop_id);
+        const coords = STOP_COORDS_BY_ID[sid];
+        if (!coords) continue;
+
+        const name = STOP_NAME_BY_ID[sid] || `Przystanek ${sid}`;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'trip-stop-marker';
+        wrapper.innerHTML = `
+            <div class="trip-stop-dot" style="border-color:${lineColor};"></div>
+            <div class="trip-stop-label" style="color:${lineColor};
+                 text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000,
+                              -2px 0 0 #000, 2px 0 0 #000, 0 -2px 0 #000, 0 2px 0 #000;">
+                ${name}
+            </div>
+        `;
+
+        const marker = new maplibregl.Marker({ element: wrapper, anchor: 'center' })
+            .setLngLat([coords.lon, coords.lat])
+            .addTo(mapa);
+
+        currentTripStopMarkers.push(marker);
+    }
+
+    _updateTripStopLabelsVisibility();
+}
+
+function _updateTripStopLabelsVisibility() {
+    const zoom = mapa.getZoom();
+    const showLabels = zoom >= 12;
+    currentTripStopMarkers.forEach(m => {
+        const el = m.getElement();
+        const label = el.querySelector('.trip-stop-label');
+        if (label) {
+            label.style.display = showLabels ? 'block' : 'none';
+        }
+    });
+}
+
+function _setBaseMarkersVisible(visible) {
+    const display = visible ? 'block' : 'none';
+    allStopMarkers.forEach(m => {
+        const el = m.getElement();
+        if (el) el.style.display = display;
+    });
+    for (const [key, marker] of Object.entries(vehicleMarkers)) {
+        const el = marker.getElement();
+        if (!el) continue;
+        if (!visible && key === currentVehicleMarkerKey) {
+            el.style.display = 'block';
+        } else {
+            el.style.display = display;
+        }
+    }
+}
+
+function _renderVehicleTimeline() {
+    const container = document.getElementById('vc-timeline');
+    const noData = document.getElementById('vc-no-data');
+    if (!container) return;
+
+    if (!currentVehicleTrip || !currentVehicleTrip.realtime || !Array.isArray(currentVehicleTrip.realtime.stop_times)) {
+        container.innerHTML = '';
+        if (noData) {
+            noData.textContent = 'Brak danych o kursie dla wybranego pojazdu.';
+            noData.style.display = 'block';
+        }
+        return;
+    }
+
+    const stopTimes = currentVehicleTrip.realtime.stop_times;
+    let currentIndex = stopTimes.findIndex(st => st.status === 'current');
+    if (currentIndex === -1) {
+        currentIndex = stopTimes.findIndex(st => st.status === 'upcoming');
+    }
+
+    const hasRealtimePosition = currentVehicleTrip.realtime.lat != null && currentVehicleTrip.realtime.lon != null;
+
+    // Compute line color once (same for all stops) and set CSS variable
+    const routeCfg    = ROUTE_TYPE_CONFIG[currentVehicle?.routeType || 3] || ROUTE_TYPE_CONFIG[3];
+    const iconUrl     = window.STATIC_URL + 'img/' + routeCfg.icon;
+    const lineColor   = currentVehicle?.routeColor ? `#${currentVehicle.routeColor}` : routeCfg.color;
+    const borderColor = _darkenColor(lineColor, 0.75);
+
+    // Set the CSS variable so ::before picks up the correct route colour
+    container.style.setProperty('--route-line-color', lineColor);
+
+    // ── "Waiting at terminus" detection ─────────────────────────────────────────
+    // Condition: first stop (stop_sequence 0 OR idx 0) has status upcoming/current
+    // AND delay < 0. While true every other stop shows "Planowo" ignoring delay,
+    // and ETA counts down to the SCHEDULED departure of that stop.
+    const firstSt = stopTimes[0];
+    const waitingAtTerminus = !!(
+        firstSt &&
+        (firstSt.status === 'upcoming' || firstSt.status === 'current') &&
+        firstSt.delay_seconds != null && firstSt.delay_seconds < 0
+    );
+
+    const pieces = [];
+    stopTimes.forEach((st, idx) => {
+        const sid = String(st.stop_id);
+        const name = STOP_NAME_BY_ID[sid] || `Przystanek ${sid}`;
+        const stopCode = STOP_CODE_BY_ID[sid] || null;
+        const fullName = stopCode ? `${name} (${stopCode})` : `${name} (${sid})`;
+
+        const schedDep = st.scheduled_departure || st.scheduled_arrival || '';
+        const realDep  = st.real_departure      || st.real_arrival      || '';
+
+        const schedDepDate = _gtfsTimeToDate(schedDep);
+        const realDepDate  = _gtfsTimeToDate(realDep);
+
+        // In waitingAtTerminus mode all stops use scheduled time for ETA
+        const etaDate = waitingAtTerminus ? schedDepDate : (realDepDate || schedDepDate);
+        const eta = (st.status === 'upcoming' || st.status === 'current')
+            ? _formatEtaLabel(etaDate)
+            : null;
+
+        // ── Status mapping ───────────────────────────────────────────────────────
+        let mapping;
+        if (waitingAtTerminus && idx === 0) {
+            // First stop: special "waiting for departure" label
+            mapping = {
+                label: 'Oczekiwanie na odjazd',
+                className: 'vehicle-stop-status--ontime',
+                icon: (hasRealtimePosition ? 'vp_' : 'no_vp_') + 'ontime.png',
+            };
+        } else if (waitingAtTerminus && st.status !== 'passed') {
+            // All other non-passed stops: force "Planowo", ignore delay
+            mapping = {
+                label: 'Planowo',
+                className: 'vehicle-stop-status--ontime',
+                icon: (hasRealtimePosition ? 'vp_' : 'no_vp_') + 'ontime.png',
+            };
+        } else {
+            mapping = _statusMapping(st.delay_seconds, st.status, st.source, hasRealtimePosition);
+        }
+
+        const isPassed  = st.status === 'passed';
+        const isCurrent = idx === currentIndex;
+
+        const showSec     = loadSettings().showSeconds;
+        // In waitingAtTerminus mode don't show strikethrough times for any stop
+        const hasDelay    = !waitingAtTerminus && st.delay_seconds != null && Math.abs(st.delay_seconds) >= 60;
+        const isFutureLike = !isPassed;
+
+        // ── Time column ──────────────────────────────────────────────────────────
+        const fmtTime = (t) => showSec ? t.slice(0, 8) : t.slice(0, 5);
+
+        let topTimeHtml = '';
+        let bottomTimeHtml = '';
+
+        if (isPassed) {
+            topTimeHtml = `<div class="vehicle-stop-time vehicle-stop-time--passed">${fmtTime(schedDep || realDep || '')}</div>`;
+        } else if (hasDelay && isFutureLike && realDep && schedDep && realDep !== schedDep) {
+            const delayClass = st.delay_seconds > 0
+                ? 'vehicle-stop-time vehicle-stop-time--late-main'
+                : 'vehicle-stop-time vehicle-stop-time--early-main';
+            topTimeHtml    = `<div class="vehicle-stop-time vehicle-stop-time--planned-strike">${fmtTime(schedDep)}</div>`;
+            bottomTimeHtml = `<div class="${delayClass}">${fmtTime(realDep)}</div>`;
+        } else {
+            const displayTime = waitingAtTerminus ? (schedDep || realDep || '') : (realDep || schedDep || '');
+            topTimeHtml = `<div class="vehicle-stop-time">${fmtTime(displayTime)}</div>`;
+        }
+
+        // ── Dot column ───────────────────────────────────────────────────────────
+        const dotClasses = ['vehicle-stop-dot'];
+        if (isPassed)  dotClasses.push('vehicle-stop-dot--passed');
+        if (isCurrent) dotClasses.push('vehicle-stop-dot--current');
+
+        const vehicleIconHtml = isCurrent ? `
+            <div class="vehicle-stop-vehicle-icon" style="background:${lineColor};border-color:${borderColor};">
+                <div class="vehicle-stop-vehicle-icon-inner"
+                     style="-webkit-mask:url('${iconUrl}') no-repeat center/contain;
+                            mask:url('${iconUrl}') no-repeat center/contain;"></div>
+            </div>` : '';
+
+        // ── Name + status column ─────────────────────────────────────────────────
+        const nameClasses   = ['vehicle-stop-name'];
+        if (isPassed) nameClasses.push('vehicle-stop-name--passed');
+
+        const statusClasses = ['vehicle-stop-status'];
+        if (mapping.className) statusClasses.push(mapping.className);
+
+        const statusIconHtml = isPassed ? '' : `
+                        <img class="vehicle-stop-status-icon"
+                             src="${window.STATIC_URL}img/${mapping.icon}" alt="status">`;
+
+        pieces.push(`
+            <div class="vehicle-stop">
+                <!-- time column -->
+                <div class="vehicle-stop-times">
+                    ${topTimeHtml}
+                    ${bottomTimeHtml}
+                </div>
+
+                <!-- dot (line is drawn by timeline::before) -->
+                <div class="vehicle-stop-line">
+                    <div class="${dotClasses.join(' ')}"></div>
+                    ${vehicleIconHtml}
+                </div>
+
+                <!-- name + status -->
+                <div class="vehicle-stop-info">
+                    <div class="${nameClasses.join(' ')}">${fullName}</div>
+                    <div class="vehicle-stop-status-row">
+                        ${statusIconHtml}
+                        <span class="${statusClasses.join(' ')}">${mapping.label}</span>
+                    </div>
+                </div>
+
+                <!-- ETA -->
+                <div class="vehicle-stop-eta">${eta || ''}</div>
+            </div>
+        `);
+    });
+
+    container.innerHTML = pieces.join('');
+    if (noData) noData.style.display = 'none';
+
+    // ── Autoscroll to the current/upcoming stop ───────────────────────────────
+    // Fires on first open (one-shot flag) OR whenever follow mode is active.
+    if (_pendingInitialScroll || followVehicleEnabled) {
+        _pendingInitialScroll = false;
+        requestAnimationFrame(() => {
+            const stops = container.querySelectorAll('.vehicle-stop');
+            const targetIdx = currentIndex >= 0 ? currentIndex : 0;
+            if (stops[targetIdx]) {
+                const panelBody = document.getElementById('vc-panel-body');
+                if (panelBody) {
+                    const stopTop    = stops[targetIdx].offsetTop;
+                    const stopHeight = stops[targetIdx].offsetHeight;
+                    panelBody.scrollTo({ top: Math.max(0, stopTop - stopHeight * 0.5), behavior: 'smooth' });
+                }
+            }
+        });
+    }
+}
+
+function _updateVehicleHeader() {
+    const badge      = document.getElementById('vc-route-badge');
+    const badgeIcon  = document.getElementById('vc-route-icon');
+    const lineEl     = document.getElementById('vc-route-short-name');
+    const headsignEl = document.getElementById('vc-headsign');
+
+    const cfg = ROUTE_TYPE_CONFIG[currentVehicle?.routeType || 3] || ROUTE_TYPE_CONFIG[3];
+    const bg  = currentVehicle?.routeColor ? `#${currentVehicle.routeColor}` : cfg.color;
+
+    if (badge)     badge.style.background = bg;
+    if (badgeIcon) {
+        const iconUrl = window.STATIC_URL + 'img/' + cfg.icon;
+        badgeIcon.style.webkitMask = `url('${iconUrl}') no-repeat center/contain`;
+        badgeIcon.style.mask       = `url('${iconUrl}') no-repeat center/contain`;
+    }
+    if (lineEl) {
+        lineEl.textContent = currentVehicle?.routeShortName || currentVehicle?.routeId
+                             || currentVehicleTrip?.route_id || '?';
+    }
+    if (headsignEl) {
+        headsignEl.textContent = currentVehicle?.headsign
+                                 || currentVehicleTrip?.headsign
+                                 || 'Szczegóły kursu';
+    }
+}
+
+async function loadVehicleTripData(meta) {
+    if (!meta || !meta.feedName || !meta.vehicleId) return;
+
+    const noData   = document.getElementById('vc-no-data');
+    const timeline = document.getElementById('vc-timeline');
+    const hadPreviousData = !!(
+        currentVehicleTrip &&
+        currentVehicleTrip.realtime &&
+        Array.isArray(currentVehicleTrip.realtime.stop_times) &&
+        currentVehicleTrip.realtime.stop_times.length > 0
+    );
+
+    if (!hadPreviousData) {
+        if (noData)   { noData.textContent = 'Ładowanie danych kursu...'; noData.style.display = 'block'; }
+        if (timeline) timeline.innerHTML = '';
+    }
+
+    try {
+        const resp = await fetch(
+            `/api/getTripByVehicle.json?feed_name=${encodeURIComponent(meta.feedName)}&vehicle_id=${encodeURIComponent(meta.vehicleId)}`
+        );
+        currentVehicleTrip = resp.ok ? await resp.json() : null;
+    } catch (e) {
+        currentVehicleTrip = null;
+    }
+
+    if (!currentVehicleTrip) {
+        if (noData) { noData.textContent = 'Brak aktywnego kursu dla wybranego pojazdu.'; noData.style.display = 'block'; }
+        updateGpsButtonState();
+        _clearTripOverlays();
+        return;
+    }
+
+    if (!currentVehicle.routeId && currentVehicleTrip.route_id) currentVehicle.routeId = currentVehicleTrip.route_id;
+    if (!currentVehicle.headsign && currentVehicleTrip.headsign) currentVehicle.headsign = currentVehicleTrip.headsign;
+
+    _updateVehicleHeader();
+    _renderVehicleTimeline();
+    updateGpsButtonState();
+
+    try {
+        const tripId = meta.tripId || currentVehicleTrip.trip_id;
+        if (!tripId) { _clearTripOverlays(); return; }
+
+        const resp = await fetch(
+            `/api/getTripDetails.json?city=${window.CITY_NAME}` +
+            `&feed_name=${encodeURIComponent(meta.feedName)}` +
+            `&date=${_todayDate()}` +
+            `&trip_id=${encodeURIComponent(tripId)}`
+        );
+        if (!resp.ok) { _clearTripOverlays(); return; }
+
+        const tripDetails = await resp.json();
+        const routeCfg    = ROUTE_TYPE_CONFIG[currentVehicle?.routeType || 3] || ROUTE_TYPE_CONFIG[3];
+        const lineColor   = currentVehicle?.routeColor ? `#${currentVehicle.routeColor}` : routeCfg.color;
+
+        _renderTripShape(tripDetails.shape || [], lineColor);
+        _renderTripStops(tripDetails.stops || [], lineColor);
+    } catch (e) {
+        _clearTripOverlays();
+    }
+}
+
+function _pushVehicleUrl(vehicleId) {
+    const base   = `/${window.CITY_NAME}/`;
+    const target = vehicleId ? `/${window.CITY_NAME}/vehicle/${encodeURIComponent(vehicleId)}/` : base;
+    if (window.location.pathname === target) return;
+    window.history.pushState({ vehicleId }, '', target);
+}
+
+// ════════════════════════════════════════
+//  VEHICLE TOOLTIP
+// ════════════════════════════════════════
+function _updateVehicleTooltip() {
+    const tooltip = document.getElementById('vehicle-tooltip');
+    if (!tooltip) return;
+
+    if (!currentVehicle || !currentVehicleMarkerKey) {
+        tooltip.classList.add('vehicle-tooltip-hidden');
+        return;
+    }
+
+    const pos = vehiclePositions[currentVehicleMarkerKey];
+    if (!pos) {
+        tooltip.classList.add('vehicle-tooltip-hidden');
+        return;
+    }
+
+    const metaWrap = vehicleMarkerMeta[currentVehicleMarkerKey];
+    if (!metaWrap) return;
+
+    // Pozycja na ekranie
+    const point = mapa.project([pos.lon, pos.lat]);
+    tooltip.style.left = Math.round(point.x) + 'px';
+    tooltip.style.top  = Math.round(point.y) + 'px';
+
+    // Ikony
+    const speedIconEl = document.getElementById('vt-speed-icon');
+    const clockIconEl = document.getElementById('vt-clock-icon');
+    if (speedIconEl) speedIconEl.src = window.STATIC_URL + 'img/speedometer.png';
+    if (clockIconEl) clockIconEl.src = window.STATIC_URL + 'img/clock_szary.png';
+
+    // Nazwa środka transportu
+    const routeType = metaWrap.meta?.routeType ?? 3;
+    const cfg = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
+    const vehicleNum = metaWrap.meta?.vehicleId ?? '?';
+    const titleEl = document.getElementById('vt-title');
+    if (titleEl) titleEl.innerHTML = `${cfg.name} <b>#${vehicleNum}</b>`;
+
+    // Prędkość: m/s → km/h
+    const speedMs  = metaWrap.speed ?? 0;
+    const speedKmh = Math.round(speedMs * 3.6);
+    const speedEl  = document.getElementById('vt-speed');
+    if (speedEl) speedEl.textContent = `${speedKmh} km/h`;
+
+    // Czas od ostatniej aktualizacji
+    const ts     = metaWrap.timestamp;
+    const timeEl = document.getElementById('vt-time');
+    if (timeEl) {
+        if (ts != null) {
+            const secsAgo = Math.max(0, Math.round(Date.now() / 1000 - ts));
+            timeEl.textContent = `${secsAgo} s temu`;
+        } else {
+            timeEl.textContent = 'brak danych';
+        }
+    }
+
+    tooltip.classList.remove('vehicle-tooltip-hidden');
+}
+
+function openVehicleView(meta) {
+    if (!meta) return;
+    currentVehicle = meta;
+    followVehicleEnabled = true;
+    updateGpsButtonState();
+
+    _setBaseMarkersVisible(false);
+
+    if (!vehicleTripRefreshTimer) {
+        vehicleTripRefreshTimer = setInterval(() => {
+            if (currentVehicle) loadVehicleTripData(currentVehicle);
+        }, 10_000);
+    }
+
+    const panel = document.getElementById('vehicle-course-panel');
+    if (panel) panel.classList.remove('vehicle-panel-hidden');
+
+    // Reset panel body to minimum height when opening a new vehicle
+    _setPanelBodyH(PANEL_BODY_MIN_H, true);
+
+    _updateVehicleHeader();
+    loadVehicleTripData(meta);
+    if (meta.vehicleId) _pushVehicleUrl(meta.vehicleId);
+}
+
+function closeVehicleView() {
+    currentVehicle          = null;
+    currentVehicleTrip      = null;
+    currentVehicleMarkerKey = null;
+    followVehicleEnabled    = false;
+    _pendingInitialScroll   = false;
+
+    const tooltip = document.getElementById('vehicle-tooltip');
+    if (tooltip) tooltip.classList.add('vehicle-tooltip-hidden');
+
+    const panel    = document.getElementById('vehicle-course-panel');
+    const noData   = document.getElementById('vc-no-data');
+    const timeline = document.getElementById('vc-timeline');
+    if (panel)    panel.classList.add('vehicle-panel-hidden');
+    if (timeline) timeline.innerHTML = '';
+    if (noData)   { noData.textContent = 'Wybierz pojazd na mapie, aby zobaczyć szczegóły kursu.'; noData.style.display = 'block'; }
+
+    // Reset height for next open
+    _setPanelBodyH(PANEL_BODY_MIN_H, false);
+
+    updateGpsButtonState();
+
+    const base = `/${window.CITY_NAME}/`;
+    if (window.location.pathname !== base) {
+        window.history.pushState({ vehicleId: null }, '', base);
+    }
+
+    if (vehicleTripRefreshTimer) {
+        clearInterval(vehicleTripRefreshTimer);
+        vehicleTripRefreshTimer = null;
+    }
+
+    _clearTripOverlays();
+    _setBaseMarkersVisible(true);
+}
+
+function openVehicleViewFromMarker(markerKey) {
+    const metaWrap = vehicleMarkerMeta[markerKey];
+    if (!metaWrap || !metaWrap.meta) return;
+    currentVehicleMarkerKey = markerKey;
+    _pendingInitialScroll = true;
+    openVehicleView({ ...metaWrap.meta });
+    _updateVehicleTooltip();
+}
+
+async function openVehicleViewFromUrl(vehicleId) {
+    if (!vehicleId) return;
+
+    for (const [key, value] of Object.entries(vehicleMarkerMeta)) {
+        const meta = value.meta;
+        if (meta && meta.vehicleId && String(meta.vehicleId) === String(vehicleId)) {
+            currentVehicleMarkerKey = key;
+            openVehicleView({ ...meta });
+            return;
+        }
+    }
+
+    if (!window.GTFS_FEEDS || window.GTFS_FEEDS.length === 0) return;
+
+    for (const feed of window.GTFS_FEEDS) {
+        try {
+            const resp = await fetch(
+                `/api/getTripByVehicle.json?feed_name=${encodeURIComponent(feed.name)}&vehicle_id=${encodeURIComponent(vehicleId)}`
+            );
+            if (!resp.ok) continue;
+            const trip = await resp.json();
+            const meta = {
+                feedName: feed.name,
+                vehicleId,
+                tripId:         trip.trip_id   || null,
+                routeId:        trip.route_id  || null,
+                routeShortName: trip.route_id  || null,
+                routeColor:     null,
+                routeType:      3,
+                headsign:       trip.headsign  || null,
+            };
+            currentVehicleMarkerKey = null;
+            openVehicleView(meta);
+            return;
+        } catch (e) { /* try next feed */ }
+    }
+
+    const panel  = document.getElementById('vehicle-course-panel');
+    const noData = document.getElementById('vc-no-data');
+    if (panel)  panel.classList.remove('vehicle-panel-hidden');
+    if (noData) { noData.textContent = 'Pojazd nie jest aktualnie aktywny lub brak danych o kursie.'; noData.style.display = 'block'; }
+}
+
+// ── Panel button listeners ────────────────────────────────────────────────────
+document.getElementById('vc-close-btn').addEventListener('click', () => {
+    closeVehicleView();
+});
+
+document.getElementById('vc-gps-btn').addEventListener('click', () => {
+    if (!currentVehicleTrip || !currentVehicleTrip.realtime) return;
+    followVehicleEnabled = !followVehicleEnabled;
+    updateGpsButtonState();
+    if (followVehicleEnabled &&
+        currentVehicleTrip.realtime.lat != null &&
+        currentVehicleTrip.realtime.lon != null) {
+        mapa.easeTo({ center: [currentVehicleTrip.realtime.lon, currentVehicleTrip.realtime.lat], duration: 800 });
+    }
+});
+
+document.getElementById('vc-more-btn').addEventListener('click', () => {});
+
+// ── Browser history ───────────────────────────────────────────────────────────
+window.addEventListener('popstate', (event) => {
+    let vehicleId = event.state?.vehicleId ?? null;
+    if (!vehicleId && window.location.pathname.includes('/vehicle/')) {
+        const after = window.location.pathname.split('/vehicle/')[1] || '';
+        vehicleId = decodeURIComponent(after.replace(/\/$/, ''));
+    }
+    if (vehicleId) {
+        openVehicleViewFromUrl(vehicleId);
+    } else {
+        closeVehicleView();
+    }
+});
 </script>
 
 </body>

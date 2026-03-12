@@ -28,7 +28,7 @@
             <b>w czasie rzeczywistym:</b>
         </p>
 
-        {% for city in cities %}
+        {% for city in cities|dictsort:"display_name" %}
 <a href="{% url 'city_detail' city.name %}" class="city-button">
 
     <span class="flag">{{ city.country_icon }}</span>
@@ -58,7 +58,8 @@
         container: 'mapa',
         style: 'https://api.maptiler.com/maps/019a2aeb-66d6-7ae1-8e66-ddc39a2d91ce/style.json?key=15p5ShrQcio1MZJsVG1w',
         center: [{{ map_center.0 }}, {{ map_center.1 }}],
-        zoom: {{ map_zoom }}
+        zoom: {{ map_zoom }},
+        attributionControl: false
     });
 </script>
 
