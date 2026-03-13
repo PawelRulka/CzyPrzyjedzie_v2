@@ -986,6 +986,7 @@ let currentVehicleTrip = null;
 let currentVehicleMarkerKey = null;
 let followVehicleEnabled = false;
 let vehicleTripRefreshTimer = null;
+let vehicleTooltipTickTimer = null;
 let _pendingInitialScroll = false;  // autoscroll to current stop only on first open
 
 let currentTripStopMarkers = [];
@@ -1178,7 +1179,7 @@ function _parseGtfsRtJson(feedName, data) {
     for (const entity of (data.entity || [])) {
         const v = entity.vehicle;
         if (!v || !v.position) continue;
-        const { latitude: lat, longitude: lon, speed, calculatedBearing } = v.position;
+        const { latitude: lat, longitude: lon, speed, calculatedBearing, calculatedSpeed } = v.position;
         const timestamp = v.timestamp ?? null;
         if (lat == null || lon == null) continue;
         const rawId    = v.vehicle?.id    ?? entity.id ?? null;
@@ -1195,7 +1196,7 @@ function _parseGtfsRtJson(feedName, data) {
     vehicle_id: vehicleId,
     trip_id:    v.trip?.tripId  ?? null,
     route_id:   v.trip?.routeId ?? null,
-    lat, lon, speed: speed ?? 0,
+    lat, lon, speed: speed ?? calculatedSpeed ?? null,
     bearing: calculatedBearing ?? null,
     timestamp: timestamp,   // ← DODANE
 });
@@ -2035,10 +2036,14 @@ function _updateVehicleTooltip() {
     if (titleEl) titleEl.innerHTML = `${cfg.name} <b>#${vehicleNum}</b>`;
 
     // Prędkość: m/s → km/h
-    const speedMs  = metaWrap.speed ?? 0;
-    const speedKmh = Math.round(speedMs * 3.6);
-    const speedEl  = document.getElementById('vt-speed');
-    if (speedEl) speedEl.textContent = `${speedKmh} km/h`;
+    const speedEl = document.getElementById('vt-speed');
+if (speedEl) {
+    if (metaWrap.speed != null) {
+        speedEl.textContent = `${Math.round(metaWrap.speed * 3.6)} km/h`;
+    } else {
+        speedEl.textContent = '-- km/h';
+    }
+}
 
     // Czas od ostatniej aktualizacji
     const ts     = metaWrap.timestamp;
@@ -2053,6 +2058,10 @@ function _updateVehicleTooltip() {
     }
 
     tooltip.classList.remove('vehicle-tooltip-hidden');
+}
+
+if (!vehicleTooltipTickTimer) {
+    vehicleTooltipTickTimer = setInterval(_updateVehicleTooltip, 1000);
 }
 
 function openVehicleView(meta) {
@@ -2111,6 +2120,11 @@ function closeVehicleView() {
         clearInterval(vehicleTripRefreshTimer);
         vehicleTripRefreshTimer = null;
     }
+
+    if (vehicleTooltipTickTimer) {
+    clearInterval(vehicleTooltipTickTimer);
+    vehicleTooltipTickTimer = null;
+    }   
 
     _clearTripOverlays();
     _setBaseMarkersVisible(true);

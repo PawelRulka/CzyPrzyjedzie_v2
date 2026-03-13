@@ -6,52 +6,57 @@
     <title>CzyPrzyjedzie - Wybierz Miasto</title>
     <link href="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.css" rel="stylesheet" />
     <link rel="stylesheet" href="{% static 'css/main.css' %}">
+    <style>
+        .city-list {
+            overflow-y: auto;
+            max-height: 100%;
+            flex: 1 1 auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: inherit;
+        }
+
+        .selection-card {
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
 </head>
 <body class="city-select-page">
-
 <div id="mapa"></div>
-
 <div class="ui-overlay">
     <div class="selection-card">
-
         <!-- IKONA AUTOBUSU -->
-        <img src="{% static 'img/CzyPrzyjedzie logo.png' %}" class="logo-icon">
-
+        <img src="{% static 'img/CzyPrzyjedzie logo.png' %}" class="logo-icon" style="align-self: center;">
         <h1 class="main-title">CzyPrzyjedzie</h1>
-
         <p class="subtitle">
             <i>„Gdzie jest ten cholerny autobus?"</i>
         </p>
-
         <p class="choose-text">
             Wybierz miasto, aby zobaczyć komunikację miejską
             <b>w czasie rzeczywistym:</b>
         </p>
-
-        {% for city in cities|dictsort:"display_name" %}
-<a href="{% url 'city_detail' city.name %}" class="city-button">
-
-    <span class="flag">{{ city.country_icon }}</span>
-
-    <div class="city-content">
-        <div class="city-name-line">
-            {{ city.display_name }} ({{ city.country_name }})
+        <div class="city-list">
+            {% for city in cities|dictsort:"display_name" %}
+            <a href="{% url 'city_detail' city.name %}" class="city-button">
+                <span class="flag">{{ city.country_icon }}</span>
+                <div class="city-content">
+                    <div class="city-name-line">
+                        {{ city.display_name }} ({{ city.country_name }})
+                    </div>
+                    {% if city.description %}
+                    <div class="city-description">
+                        {{ city.description }}
+                    </div>
+                    {% endif %}
+                </div>
+            </a>
+            {% endfor %}
         </div>
-
-        {% if city.description %}
-        <div class="city-description">
-            {{ city.description }}
-        </div>
-        {% endif %}
-    </div>
-
-</a>
-{% endfor %}
-
-
     </div>
 </div>
-
 <script src="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.js"></script>
 <script>
     const mapa = new maplibregl.Map({
@@ -62,6 +67,5 @@
         attributionControl: false
     });
 </script>
-
 </body>
 </html>
