@@ -490,6 +490,7 @@ def main():
 
             vp = e.vehicle
             vp.vehicle.id = str(t["vehicleNo"])
+            vp.vehicle.label = str(t["vehicleNo"])
             if trip_id:
                 vp.trip.trip_id = trip_id
             if route_id:
@@ -503,7 +504,8 @@ def main():
                 "id": str(t["vehicleNo"]),
                 "vehicle": {
                     "vehicle": {
-                        "id": str(t["vehicleNo"])
+                        "id": str(t["vehicleNo"]),
+                        "label": str(t["vehicleNo"])
                     },
                     "position": {
                         "latitude": t["lat"],

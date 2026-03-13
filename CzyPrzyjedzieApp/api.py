@@ -1090,6 +1090,46 @@ def get_line_brigade_delay_for_trip(request):
     })
 
 
+def _find_trip_update_block(realtime: dict, trip_id: str) -> dict | None:
+    """
+    Zwraca surowy blok TripUpdate (dict) dla danego trip_id lub None.
+    Obsługuje zarówno protobuf FeedMessage jak i JSON (camelCase / snake_case).
+    """
+    tu = realtime.get("trip_updates")
+    if tu is None:
+        return None
+
+    if isinstance(tu, gtfs_realtime_pb2.FeedMessage):
+        for entity in tu.entity:
+            if entity.HasField("trip_update") and entity.trip_update.trip.trip_id == trip_id:
+                upd = entity.trip_update
+                stu_list = []
+                for stu in upd.stop_time_update:
+                    stu_list.append({
+                        "stop_id": stu.stop_id,
+                        "stop_sequence": stu.stop_sequence,
+                        "arrival": {"delay": stu.arrival.delay, "time": stu.arrival.time}
+                            if stu.HasField("arrival") else {},
+                        "departure": {"delay": stu.departure.delay, "time": stu.departure.time}
+                            if stu.HasField("departure") else {},
+                    })
+                return {
+                    "trip": {"tripId": trip_id},
+                    "stopTimeUpdate": stu_list,
+                }
+        return None
+
+    # JSON
+    entities = tu if isinstance(tu, list) else tu.get("entity", [])
+    for entity in entities:
+        tu_block = entity.get("tripUpdate") or entity.get("trip_update") or {}
+        trip_info = tu_block.get("trip", {})
+        tid = trip_info.get("tripId") or trip_info.get("trip_id")
+        if tid == trip_id:
+            return tu_block
+
+    return None
+
 @require_GET
 def get_trip_by_vehicle(request):
     gtfs_loader.ensure_gtfs_loaded()
@@ -1139,6 +1179,41 @@ def get_trip_by_vehicle(request):
                 vehicle_number = veh_info.get("id") or entity.get("id")
                 break
 
+    # ---------------------------------------------------------------------------
+    # Fallback dla estymowanych pojazdów (prefiks EST-)
+    # ---------------------------------------------------------------------------
+    # Syntetyczne encje EST-* nie istnieją w surowym vehicle_positions –
+    # są budowane w locie przez get_parsed_realtime_for_feed. Gdy vehicle_id
+    # pasuje do wzorca EST-{trip_id}, odtwarzamy dane bezpośrednio z TripUpdates
+    # i statycznego GTFS, dokładnie tak jak robi to build_synthetic_vehicle_entity_from_tu.
+    is_estimated = False
+    estimated_delay_seconds: int | None = None
+    _est_result: dict | None = None       # zachowujemy wynik est do wyliczenia delay
+    _est_tu_block: dict | None = None     # zachowujemy tu_block do tego samego
+    _est_now_ts: int | None = None
+
+    if not trip_id:
+        est_prefix = "EST-"
+        if vehicle_id.startswith(est_prefix):
+            # Wyciągamy trip_id zakodowany w nazwie pojazdu
+            candidate_trip_id = vehicle_id[len(est_prefix):]
+            tu_block = _find_trip_update_block(realtime, candidate_trip_id)
+            if tu_block is not None:
+                now_ts = int(time.time())
+                if not _is_trip_finished(candidate_trip_id, tu_block, indexes, now_ts=now_ts):
+                    est = _estimate_position_from_trip_update(
+                        feed_name, candidate_trip_id, tu_block, indexes, now_ts=now_ts
+                    )
+                    if est:
+                        trip_id = candidate_trip_id
+                        vehicle_lat = est["lat"]
+                        vehicle_lon = est["lon"]
+                        vehicle_number = vehicle_id
+                        is_estimated = True
+                        _est_result = est
+                        _est_tu_block = tu_block
+                        _est_now_ts = now_ts
+
     if not trip_id:
         return JsonResponse({
             "feed_name": feed_name,
@@ -1155,6 +1230,14 @@ def get_trip_by_vehicle(request):
     block_id = (trip_obj.get("brigade") or trip_obj.get("block_id") or "N/A") if trip_obj else "N/A"
     stops_by_id = indexes["stops_by_id"]
     trip_updates = extract_trip_updates_for_trip(realtime, trip_id)
+
+    # Wyliczamy estymowane opóźnienie gdy pozycja pochodzi z interpolacji TripUpdate
+    if is_estimated and _est_result is not None and _est_now_ts is not None:
+        estimated_delay_seconds = _estimate_delay_from_position(
+            est=_est_result,
+            static_stops=static_stops,
+            now_ts=_est_now_ts,
+        )
 
     rich_stop_times = build_stop_times_with_realtime(
         static_stops=static_stops,
@@ -1176,6 +1259,11 @@ def get_trip_by_vehicle(request):
         ),
         "stops": static_stops,
         "shape": shape,
+        "positionType": "estimated" if is_estimated else "real",
+        "estimatedDelay": {
+            "delay_seconds": estimated_delay_seconds,
+            "source": "position_interpolation" if estimated_delay_seconds is not None else None,
+        } if is_estimated else None,
         "realtime": {
             "vehicle_number": vehicle_number,
             "lat": vehicle_lat,
@@ -1740,6 +1828,157 @@ def _build_tu_realtime_timestamps_for_trip(
     return result
 
 
+# ---------------------------------------------------------------------------
+# ZMIANA 1: Sprawdzanie czy kurs dobiegł końca
+# ---------------------------------------------------------------------------
+def _is_trip_finished(
+    trip_id: str,
+    trip_update_block: dict,
+    indexes: dict,
+    now_ts: int | None = None,
+) -> bool:
+    """
+    Sprawdza czy kurs zakończył już kursowanie.
+
+    Strategia (w kolejności priorytetów):
+    1. Jeśli dostępne są timestampy z TripUpdate – porównujemy aktualny czas
+       z realnym czasem przyjazdu/odjazdu ostatniego przystanku kursu.
+    2. Fallback na statyczny rozkład – porównujemy aktualny czas z planowym
+       czasem odjazdu ostatniego przystanku (z uwzględnieniem ewentualnego
+       delay z ostatniej aktualizacji TripUpdate).
+
+    Zwraca True jeśli kurs jest już zakończony i należy go pominąć.
+    """
+    if now_ts is None:
+        now_ts = int(time.time())
+
+    static_stops = indexes.get("stop_times_by_trip", {}).get(trip_id, [])
+    if not static_stops:
+        # Brak danych statycznych – nie możemy nic ocenić, zakładamy że aktywny
+        return False
+
+    # --- Ścieżka 1: rzeczywiste timestampy z TripUpdate ---
+    if trip_update_block:
+        st_real = _build_tu_realtime_timestamps_for_trip(static_stops, trip_update_block)
+        if st_real:
+            last = st_real[-1]
+            # Preferujemy arrival ostatniego przystanku; fallback na departure
+            last_ts = last.get("arrival_real_ts") or last.get("departure_real_ts")
+            if last_ts is not None:
+                return now_ts > last_ts
+
+    # --- Ścieżka 2: statyczny rozkład + opcjonalny delay ---
+    last_stop = static_stops[-1]  # stop_times_by_trip są już posortowane
+    last_time_str = last_stop.get("arrival_time") or last_stop.get("departure_time")
+    if not last_time_str:
+        return False
+
+    # Pobierz ostatni znany delay z TripUpdate (jeśli dostępny)
+    static_delay = 0
+    if trip_update_block:
+        stu_list = (
+            trip_update_block.get("stopTimeUpdate")
+            or trip_update_block.get("stop_time_update")
+            or []
+        )
+        if stu_list:
+            last_stu = stu_list[-1]
+            arr = last_stu.get("arrival") or {}
+            dep = last_stu.get("departure") or {}
+            raw_delay = dep.get("delay") if dep.get("delay") is not None else arr.get("delay")
+            if raw_delay is not None:
+                try:
+                    static_delay = int(raw_delay)
+                except Exception:
+                    static_delay = 0
+
+    today = datetime.now().date()
+    try:
+        base_dt = parse_date_from_time(
+            datetime.combine(today, datetime.min.time()), last_time_str
+        )
+        last_ts_static = int(base_dt.timestamp()) + static_delay
+    except Exception:
+        return False
+
+    return now_ts > last_ts_static
+
+
+def _estimate_delay_from_position(
+    est: dict,
+    static_stops: list,
+    now_ts: int,
+) -> int | None:
+    """
+    Estymuje opóźnienie kursu (w sekundach) na podstawie wyestymowanej pozycji
+    pojazdu między przystankami.
+
+    Algorytm:
+      1. Pobieramy planowe timestampy (unix) dla przystanku A (odjazd) i B (przyjazd)
+         przeliczone ze statycznego rozkładu (departure_time / arrival_time).
+      2. Interpolujemy liniowo kiedy pojazd *powinien* być w punkcie o danym
+         progress między A i B:
+             expected_ts = sched_dep_A + progress * (sched_arr_B - sched_dep_A)
+      3. delay = now_ts - expected_ts
+         Wartość dodatnia = opóźnienie, ujemna = jazda przed rozkładem.
+
+    Zwraca delay w sekundach lub None gdy brak danych do wyliczenia.
+
+    Parametry:
+        est         – dict zwrócony przez _estimate_position_from_trip_update,
+                      musi zawierać: progress, stopA_seq, stopB_seq
+        static_stops – posortowana lista stop_times dla kursu (z indexes)
+        now_ts      – aktualny czas unix (int)
+    """
+    progress = est.get("progress")
+    stopA_seq = est.get("stopA_seq")
+    stopB_seq = est.get("stopB_seq")
+
+    if progress is None or stopA_seq is None or stopB_seq is None:
+        return None
+
+    # Budujemy szybki indeks stop_times po stop_sequence
+    st_by_seq: dict[int, dict] = {
+        int(st.get("stop_sequence", -1)): st for st in static_stops
+    }
+
+    st_A = st_by_seq.get(stopA_seq)
+    st_B = st_by_seq.get(stopB_seq)
+
+    if st_A is None or st_B is None:
+        return None
+
+    today = datetime.now().date()
+    base_dt = datetime.combine(today, datetime.min.time())
+
+    def _sched_ts(stop_time_row: dict, field: str) -> int | None:
+        """Przelicza planowy czas (HH:MM:SS, może być >24h) na timestamp unix."""
+        t_str = stop_time_row.get(field)
+        if not t_str:
+            return None
+        try:
+            dt = parse_date_from_time(base_dt, t_str)
+            return int(dt.timestamp())
+        except Exception:
+            return None
+
+    # Planowany odjazd z A i planowy przyjazd do B
+    sched_dep_A = _sched_ts(st_A, "departure_time") or _sched_ts(st_A, "arrival_time")
+    sched_arr_B = _sched_ts(st_B, "arrival_time") or _sched_ts(st_B, "departure_time")
+
+    if sched_dep_A is None:
+        return None
+
+    if stopA_seq == stopB_seq or sched_arr_B is None or sched_arr_B <= sched_dep_A:
+        # Pojazd stoi na przystanku A (progress=0) lub segment zdegenerowany –
+        # porównujemy po prostu planowy odjazd z A z aktualnym czasem.
+        return now_ts - sched_dep_A
+
+    # Interpolacja: kiedy planowo powinien być w miejscu o danym progress
+    expected_ts = sched_dep_A + progress * (sched_arr_B - sched_dep_A)
+    return int(round(now_ts - expected_ts))
+
+
 def _estimate_position_from_trip_update(
     feed_name: str,
     trip_id: str,
@@ -1930,6 +2169,7 @@ def build_synthetic_vehicle_entity_from_tu(
 ) -> dict | None:
     """
     Buduje syntetyczną encję vehicle na podstawie TripUpdate i statycznego GTFS.
+    Zwraca None jeśli kurs dobiegł końca lub nie można wyestymować pozycji.
     """
     tu = trip_update_entity.get("tripUpdate") or trip_update_entity.get("trip_update")
     if not tu:
@@ -1943,6 +2183,10 @@ def build_synthetic_vehicle_entity_from_tu(
     route_id = trip_info.get("routeId") or trip_info.get("route_id")
     if now_ts is None:
         now_ts = int(time.time())
+
+    # ZMIANA 1: Pomiń kurs jeśli już zakończył kursowanie
+    if _is_trip_finished(trip_id, tu, indexes, now_ts=now_ts):
+        return None
 
     est = _estimate_position_from_trip_update(feed_name, trip_id, tu, indexes, now_ts=now_ts)
     if not est:
@@ -1973,6 +2217,8 @@ def build_synthetic_vehicle_entity_from_tu(
 
     return {
         "id": synthetic_vehicle_id,
+        # ZMIANA 2: flaga informująca że pozycja jest estymowana, nie realna
+        "positionType": "estimated",
         "vehicle": vehicle_block,
     }
 
@@ -2072,13 +2318,21 @@ def get_parsed_realtime_for_feed(request):
                 indexes,
                 now_ts=feed_ts or int(time.time()),
             )
+            # ZMIANA 1: build_synthetic_vehicle_entity_from_tu zwraca None
+            # dla zakończonych kursów – po prostu pomijamy
             if synthetic:
                 combined_entities.append(synthetic)
 
+    # ZMIANA 2: oznaczamy realne encje vehicle flagą positionType="real"
     for entity in combined_entities:
         vehicle_block = entity.get("vehicle")
         if not vehicle_block:
             continue
+        # Syntetyczne encje mają już ustawione positionType w build_synthetic_vehicle_entity_from_tu;
+        # dla realnych encji (pochodzących z VehiclePositions) ustawiamy "real"
+        if "positionType" not in entity:
+            entity["positionType"] = "real"
+
         position = vehicle_block.get("position")
         if not position:
             continue

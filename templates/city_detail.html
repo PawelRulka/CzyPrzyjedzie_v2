@@ -840,16 +840,17 @@ function _setPanelBodyH(px, animated) {
 
         const currentH = getBodyH();
 
-        // Close if dragged very low (below 30% of min height)
+        // Zamknij jeśli przeciągnięto bardzo nisko (poniżej 30% wysokości minimalnej)
         if (currentH < PANEL_BODY_MIN_H * 0.3) {
             closeVehicleView();
             return;
         }
 
-        // Snap: halfway between min and max decides direction
-        const mid    = (PANEL_BODY_MIN_H + PANEL_BODY_MAX_H) / 2;
-        const snapTo = currentH >= mid ? PANEL_BODY_MAX_H : PANEL_BODY_MIN_H;
-        _setPanelBodyH(snapTo, true);
+        // Snap do minimum jeśli poniżej PANEL_BODY_MIN_H, inaczej zostaw na aktualnej pozycji
+        if (currentH < PANEL_BODY_MIN_H) {
+            _setPanelBodyH(PANEL_BODY_MIN_H, true);
+        }
+        // Powyżej minimum: panel pozostaje dokładnie tam gdzie użytkownik puścił
     }
 
     // Mouse
@@ -974,7 +975,7 @@ mapa.on('moveend', () => {
 const ROUTE_TYPE_CONFIG = {
     0:   { icon: 'tram.png',       color: '#DA797E', name: 'Tramwaj'       },
     1:   { icon: 'subway.png',     color: '#8F96DA', name: 'Metro'         },
-    2:   { icon: 'train.png',      color: '#2C95D0', name: 'Kolej'         },
+    2:   { icon: 'train.png',      color: '#2C95D0', name: 'Pociąg'         },
     3:   { icon: 'bus.png',        color: '#43842B', name: 'Autobus'       },
     5:   { icon: 'cable-car.png',  color: '#679BD4', name: 'Kolej linowa'  },
     7:   { icon: 'funicular.png',  color: '#679BD4', name: 'Kolej zębata'  },
@@ -1116,7 +1117,12 @@ async function _fetchRouteDetails(routeId, feedName) {
     return routeDetailsCache[key] ?? null;
 }
 
-function buildVehicleMarkerHTML(routeShortName, blockId, vehicleId, routeType, colorHex, bearing, settings) {
+// ════════════════════════════════════════
+//  ZMIANA 2: buildVehicleMarkerHTML – nowy parametr isEstimated
+//  Gdy pojazd ma positionType === "estimated", między ikoną rodzaju
+//  pojazdu a etykietą linia/brygada pojawia się ikona no_vp.png.
+// ════════════════════════════════════════
+function buildVehicleMarkerHTML(routeShortName, blockId, vehicleId, routeType, colorHex, bearing, settings, isEstimated) {
     const cfg     = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
     const bg      = colorHex ? `#${colorHex}` : cfg.color;
     const iconUrl = window.STATIC_URL + 'img/' + cfg.icon;
@@ -1135,11 +1141,17 @@ function buildVehicleMarkerHTML(routeShortName, blockId, vehicleId, routeType, c
             </svg>
         </div>` : '';
 
+    // Ikona "brak pozycji GPS" wyświetlana gdy positionType === "estimated"
+    const estimatedIconHtml = isEstimated
+        ? `<div class="vm-icon" style="-webkit-mask:url('${window.STATIC_URL}img/no_vp.png') no-repeat center/contain; mask:url('${window.STATIC_URL}img/no_vp.png') no-repeat center/contain;"></div>`
+        : '';
+
     const html = `<div class="vm-wrap">
         <div class="vm-body" style="background:${bg};">
             ${arrowHTML}
             <div class="vm-icon" style="-webkit-mask:url('${iconUrl}') no-repeat center/contain;
                                         mask:url('${iconUrl}') no-repeat center/contain;"></div>
+            ${estimatedIconHtml}
             <span class="vm-label">${label}</span>
         </div>
     </div>`;
@@ -1174,6 +1186,9 @@ function animateMarkerTo(marker, fromLat, fromLon, toLat, toLon, duration = 1200
     requestAnimationFrame(step);
 }
 
+// ════════════════════════════════════════
+//  ZMIANA 1: _parseGtfsRtJson – wyciągamy positionType z pozycji pojazdu
+// ════════════════════════════════════════
 function _parseGtfsRtJson(feedName, data) {
     const result = [];
     for (const entity of (data.entity || [])) {
@@ -1184,22 +1199,24 @@ function _parseGtfsRtJson(feedName, data) {
         if (lat == null || lon == null) continue;
         const rawId    = v.vehicle?.id    ?? entity.id ?? null;
         const rawLabel = v.vehicle?.label ?? null;
-        let vehicleId = null;
-        if (rawLabel != null && rawLabel !== '' && rawLabel !== 'null' && rawLabel !== 'N/A') {
-            vehicleId = rawLabel;
-        } else if (rawId != null && rawId !== '' && rawId !== 'null' && rawId !== 'N/A') {
-            vehicleId = rawId;
-        }
+        // vehicleId: wyłącznie z label – do etykiet w UI; null gdy brak label (id NIE jest fallbackiem dla UI)
+        const vehicleId = (rawLabel != null && rawLabel !== '' && rawLabel !== 'null' && rawLabel !== 'N/A')
+            ? rawLabel : null;
+        // apiVehicleId: do zapytań API i jako klucz znacznika; fallback na id gdy brak label
+        const _rawIdOk = (rawId != null && rawId !== '' && rawId !== 'null' && rawId !== 'N/A') ? rawId : null;
+        const apiVehicleId = vehicleId ?? _rawIdOk;
 
         result.push({
-    feed_name:  feedName,
-    vehicle_id: vehicleId,
-    trip_id:    v.trip?.tripId  ?? null,
-    route_id:   v.trip?.routeId ?? null,
-    lat, lon, speed: speed ?? calculatedSpeed ?? null,
-    bearing: calculatedBearing ?? null,
-    timestamp: timestamp,   // ← DODANE
-});
+            feed_name:          feedName,
+            vehicle_id:         apiVehicleId,     // klucz do API (może być id gdy brak label)
+            display_vehicle_id: vehicleId,        // do UI: null gdy brak label → nie pokazujemy
+            trip_id:      v.trip?.tripId  ?? null,
+            route_id:     v.trip?.routeId ?? null,
+            lat, lon, speed: speed ?? calculatedSpeed ?? null,
+            bearing:      calculatedBearing ?? null,
+            timestamp:    timestamp,
+            positionType: entity.positionType ?? null,   // "estimated" = brak VP (pole na poziomie entity)
+        });
     }
     return result;
 }
@@ -1293,29 +1310,34 @@ async function refreshVehicles() {
             vehicleBearings[key] = v.bearing;
         }
 
+        // ZMIANA 2b: przekazujemy isEstimated do buildVehicleMarkerHTML
         const { html, bg } = buildVehicleMarkerHTML(
-            routeShortName, blockId, v.vehicle_id,
-            routeType, colorHex, effectiveBearing, s
+            routeShortName, blockId, v.display_vehicle_id,
+            routeType, colorHex, effectiveBearing, s,
+            v.positionType === 'estimated'
         );
         const dotHtml  = buildVehicleDotHTML(bg);
         const fullMode = mapa.getZoom() > 14;
         const displayHtml = fullMode ? html : dotHtml;
 
+        // ZMIANA 3a: zapisujemy positionType w metadanych znacznika
         const markerMeta = {
             feedName: v.feed_name,
-            vehicleId: v.vehicle_id ?? null,
+            vehicleId: v.vehicle_id ?? null,           // klucz API
+            displayVehicleId: v.display_vehicle_id ?? null,  // do UI (null gdy brak label)
             tripId: v.trip_id ?? null,
             routeId: resolvedRouteId ?? v.route_id ?? null,
             routeShortName,
             routeColor: colorHex,
             routeType,
             headsign: null,
+            positionType: v.positionType ?? null,
         };
         vehicleMarkerMeta[key] = {
-    fullHtml: html, dotHtml, meta: markerMeta,
-    speed: v.speed ?? 0,
-    timestamp: v.timestamp ?? null,
-};
+            fullHtml: html, dotHtml, meta: markerMeta,
+            speed: v.speed ?? 0,
+            timestamp: v.timestamp ?? null,
+        };
 
         if (vehicleMarkers[key]) {
             vehicleMarkers[key].getElement().innerHTML = displayHtml;
@@ -1738,7 +1760,10 @@ function _renderVehicleTimeline() {
         currentIndex = stopTimes.findIndex(st => st.status === 'upcoming');
     }
 
-    const hasRealtimePosition = currentVehicleTrip.realtime.lat != null && currentVehicleTrip.realtime.lon != null;
+    // ZMIANA 4: jeżeli pojazd ma positionType === "estimated", traktujemy
+    // go jak brak pozycji GPS → używamy ikon no_vp_* zamiast vp_*
+    const hasRealtimePosition = (currentVehicleTrip.realtime.lat != null && currentVehicleTrip.realtime.lon != null)
+        && currentVehicle?.positionType !== 'estimated';
 
     // Compute line color once (same for all stops) and set CSS variable
     const routeCfg    = ROUTE_TYPE_CONFIG[currentVehicle?.routeType || 3] || ROUTE_TYPE_CONFIG[3];
@@ -1961,6 +1986,8 @@ async function loadVehicleTripData(meta) {
 
     if (!currentVehicle.routeId && currentVehicleTrip.route_id) currentVehicle.routeId = currentVehicleTrip.route_id;
     if (!currentVehicle.headsign && currentVehicleTrip.headsign) currentVehicle.headsign = currentVehicleTrip.headsign;
+    // positionType może być zwrócony bezpośrednio przez getTripByVehicle (np. "estimated")
+    if (currentVehicleTrip.positionType != null) currentVehicle.positionType = currentVehicleTrip.positionType;
 
     _updateVehicleHeader();
     _renderVehicleTimeline();
@@ -2031,19 +2058,21 @@ function _updateVehicleTooltip() {
     // Nazwa środka transportu
     const routeType = metaWrap.meta?.routeType ?? 3;
     const cfg = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
-    const vehicleNum = metaWrap.meta?.vehicleId ?? '?';
+    const displayVehicleNum = metaWrap.meta?.displayVehicleId ?? null;
     const titleEl = document.getElementById('vt-title');
-    if (titleEl) titleEl.innerHTML = `${cfg.name} <b>#${vehicleNum}</b>`;
+    if (titleEl) titleEl.innerHTML = displayVehicleNum
+        ? `${cfg.name} <b>#${displayVehicleNum}</b>`
+        : cfg.name;
 
     // Prędkość: m/s → km/h
     const speedEl = document.getElementById('vt-speed');
-if (speedEl) {
-    if (metaWrap.speed != null) {
-        speedEl.textContent = `${Math.round(metaWrap.speed * 3.6)} km/h`;
-    } else {
-        speedEl.textContent = '-- km/h';
+    if (speedEl) {
+        if (metaWrap.speed != null) {
+            speedEl.textContent = `${Math.round(metaWrap.speed * 3.6)} km/h`;
+        } else {
+            speedEl.textContent = '-- km/h';
+        }
     }
-}
 
     // Czas od ostatniej aktualizacji
     const ts     = metaWrap.timestamp;
@@ -2122,9 +2151,9 @@ function closeVehicleView() {
     }
 
     if (vehicleTooltipTickTimer) {
-    clearInterval(vehicleTooltipTickTimer);
-    vehicleTooltipTickTimer = null;
-    }   
+        clearInterval(vehicleTooltipTickTimer);
+        vehicleTooltipTickTimer = null;
+    }
 
     _clearTripOverlays();
     _setBaseMarkersVisible(true);
