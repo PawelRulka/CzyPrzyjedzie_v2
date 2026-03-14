@@ -430,6 +430,15 @@
             color: #FF9500;
         }
 
+        /* ── Compact time size (when showSeconds OR arr+dep both shown with delay) ── */
+        .vehicle-stop-times--compact .vehicle-stop-time,
+        .vehicle-stop-times--compact .vehicle-stop-time--passed,
+        .vehicle-stop-times--compact .vehicle-stop-time--planned-strike,
+        .vehicle-stop-times--compact .vehicle-stop-time--late-main,
+        .vehicle-stop-times--compact .vehicle-stop-time--early-main {
+            font-size: 14px;
+        }
+
         /* ── Separator between arrival and departure time groups ── */
         .vehicle-stop-time-sep {
             height: 4px;
@@ -2100,6 +2109,24 @@ function _renderVehicleTimeline() {
         firstSt.delay_seconds != null && firstSt.delay_seconds < 0
     );
 
+    const showSec = loadSettings().showSeconds;
+
+    // Flaga kompaktowego rozmiaru czcionki – aktywna gdy:
+    //  • włączone sekundy w ustawieniach, LUB
+    //  • co najmniej jeden przystanek wyświetli oba czasy (arr ≠ dep) z opóźnieniem
+    //    (tj. 4 wiersze: sched_arr, real_arr, sched_dep, real_dep)
+    const useCompactTimes = showSec || stopTimes.some(st => {
+        if (st.status === 'passed') return false;
+        const sArr = st.scheduled_arrival   || '';
+        const sDep = st.scheduled_departure || '';
+        const rArr = st.real_arrival        || '';
+        const rDep = st.real_departure      || '';
+        const arrDepDiffer = sArr && sDep && sArr !== sDep;
+        const hasDelaySt   = st.delay_seconds != null && Math.abs(st.delay_seconds) >= 60 && !waitingAtTerminus;
+        // arr group will show 2 rows AND dep group will show 2 rows
+        return arrDepDiffer && hasDelaySt && rArr && rArr !== sArr && rDep && rDep !== sDep;
+    });
+
     const pieces = [];
     stopTimes.forEach((st, idx) => {
         const sid = String(st.stop_id);
@@ -2144,7 +2171,6 @@ function _renderVehicleTimeline() {
         const isPassed  = st.status === 'passed';
         const isCurrent = idx === currentIndex;
 
-        const showSec     = loadSettings().showSeconds;
         const hasDelay    = !waitingAtTerminus && st.delay_seconds != null && Math.abs(st.delay_seconds) >= 60;
         const isFutureLike = !isPassed;
 
@@ -2219,7 +2245,7 @@ function _renderVehicleTimeline() {
         pieces.push(`
             <div class="vehicle-stop">
                 <!-- time column: arrival (top) then departure (bottom) -->
-                <div class="vehicle-stop-times">
+                <div class="vehicle-stop-times${useCompactTimes ? ' vehicle-stop-times--compact' : ''}">
                     ${timeColHtml}
                 </div>
 
