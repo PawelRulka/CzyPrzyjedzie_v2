@@ -82,7 +82,7 @@ ROUTE_COLORS = [
     {"lines": ["200", "201", "202"], "route_color": "BE080A", "route_text_color": "FFFFFF"},
     {"lines": "100-142", "route_color": "225AC9", "route_text_color": "FFFFFF"},
     {"lines": ["N1", "N2", "N3", "N4", "N5", "N6"], "route_color": "334455", "route_text_color": "FFFFFF"},
-    {"lines": ["J1", "J2", "J3", "J4", "J5", "J6"], "route_color": "FFF200", "route_text_color": "000000"},
+    {"lines": ["J", "J1", "J2", "J3", "J4", "J5", "J6"], "route_color": "D83E46", "route_text_color": "FFFFFF"},
 ]
 
 

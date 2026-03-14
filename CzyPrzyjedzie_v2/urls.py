@@ -1,21 +1,3 @@
-"""
-URL configuration for CzyPrzyjedzie_v2 project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/5.2/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
-
-    abcd
-"""
 from django.contrib import admin
 from django.urls import path, include
 from CzyPrzyjedzieApp import views
@@ -25,6 +7,7 @@ urlpatterns = [
     path('', views.city_selection, name='city_selection'),
     path('api/<slug:city_slug>/stops/', views.get_stops_api, name='get_stops_api'),
     path('<slug:city_slug>/vehicle/<path:vehicle_id>/', views.city_detail, name='city_vehicle_detail'),
+    path('<slug:city_slug>/trip/<str:feed_name>/<str:trip_id>/<str:date>/', views.city_detail, name='city_trip_detail'),
     path('<slug:city_slug>/', views.city_detail, name='city_detail'),
     path("api/", include("CzyPrzyjedzieApp.urls_api")),
 ]

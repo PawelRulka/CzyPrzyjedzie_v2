@@ -15,6 +15,9 @@
         window.CITY_NAME = "{{ city.name }}";
         window.INITIAL_SELECTED_VEHICLE_ID = "{{ selected_vehicle_id|default_if_none:''|escapejs }}";
         window.GTFS_FEEDS = [{% for feed in city.feeds.all %}{% if feed.is_active %}{"name":"{{ feed.name|escapejs }}"}{% if not forloop.last %},{% endif %}{% endif %}{% endfor %}];
+        window.INITIAL_TRIP_FEED = "{{ selected_feed_name|default:''|escapejs }}";
+        window.INITIAL_TRIP_ID   = "{{ selected_trip_id|default:''|escapejs }}";
+        window.INITIAL_TRIP_DATE = "{{ selected_date|default:''|escapejs }}";
     </script>
     <style>
         /* ── Settings panel ── */
@@ -286,6 +289,16 @@
             align-items: center;
             padding: 6px 0;
         }
+        .stop-departure-row--clickable {
+            cursor: pointer;
+            border-radius: 8px;
+            margin: 0 -6px;
+            padding: 6px 6px;
+            transition: background 0.15s;
+        }
+        .stop-departure-row--clickable:hover {
+            background: rgba(255,255,255,0.06);
+        }
         .stop-departure-line-badge {
             display: inline-flex;
             flex-direction: column;
@@ -337,9 +350,10 @@
         }
         .stop-departure-time-main {
             font-family: 'Roboto', sans-serif;
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 500;
             color: #E7E8E8;
+            white-space: nowrap;
         }
         .stop-departure-eta {
             font-family: 'Roboto', sans-serif;
@@ -414,6 +428,12 @@
             font-size: 18px;
             font-weight: 500;
             color: #FF9500;
+        }
+
+        /* ── Separator between arrival and departure time groups ── */
+        .vehicle-stop-time-sep {
+            height: 4px;
+            flex-shrink: 0;
         }
 
         /* Vertical line + dot column */
@@ -1284,11 +1304,6 @@ async function _fetchRouteDetails(routeId, feedName) {
     return routeDetailsCache[key] ?? null;
 }
 
-// ════════════════════════════════════════
-//  ZMIANA 2: buildVehicleMarkerHTML – nowy parametr isEstimated
-//  Gdy pojazd ma positionType === "estimated", między ikoną rodzaju
-//  pojazdu a etykietą linia/brygada pojawia się ikona no_vp.png.
-// ════════════════════════════════════════
 function buildVehicleMarkerHTML(routeShortName, blockId, vehicleId, routeType, colorHex, bearing, settings, isEstimated) {
     const cfg     = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
     const bg      = colorHex ? `#${colorHex}` : cfg.color;
@@ -1308,7 +1323,6 @@ function buildVehicleMarkerHTML(routeShortName, blockId, vehicleId, routeType, c
             </svg>
         </div>` : '';
 
-    // Ikona "brak pozycji GPS" wyświetlana gdy positionType === "estimated"
     const estimatedIconHtml = isEstimated
         ? `<div class="vm-icon" style="-webkit-mask:url('${window.STATIC_URL}img/no_vp.png') no-repeat center/contain; mask:url('${window.STATIC_URL}img/no_vp.png') no-repeat center/contain;"></div>`
         : '';
@@ -1353,9 +1367,6 @@ function animateMarkerTo(marker, fromLat, fromLon, toLat, toLon, duration = 1200
     requestAnimationFrame(step);
 }
 
-// ════════════════════════════════════════
-//  ZMIANA 1: _parseGtfsRtJson – wyciągamy positionType z pozycji pojazdu
-// ════════════════════════════════════════
 function _parseGtfsRtJson(feedName, data) {
     const result = [];
     for (const entity of (data.entity || [])) {
@@ -1366,23 +1377,21 @@ function _parseGtfsRtJson(feedName, data) {
         if (lat == null || lon == null) continue;
         const rawId    = v.vehicle?.id    ?? entity.id ?? null;
         const rawLabel = v.vehicle?.label ?? null;
-        // vehicleId: wyłącznie z label – do etykiet w UI; null gdy brak label (id NIE jest fallbackiem dla UI)
         const vehicleId = (rawLabel != null && rawLabel !== '' && rawLabel !== 'null' && rawLabel !== 'N/A')
             ? rawLabel : null;
-        // apiVehicleId: do zapytań API i jako klucz znacznika; fallback na id gdy brak label
         const _rawIdOk = (rawId != null && rawId !== '' && rawId !== 'null' && rawId !== 'N/A') ? rawId : null;
         const apiVehicleId = vehicleId ?? _rawIdOk;
 
         result.push({
             feed_name:          feedName,
-            vehicle_id:         apiVehicleId,     // klucz do API (może być id gdy brak label)
-            display_vehicle_id: vehicleId,        // do UI: null gdy brak label → nie pokazujemy
+            vehicle_id:         apiVehicleId,
+            display_vehicle_id: vehicleId,
             trip_id:      v.trip?.tripId  ?? null,
             route_id:     v.trip?.routeId ?? null,
             lat, lon, speed: speed ?? calculatedSpeed ?? null,
             bearing:      calculatedBearing ?? null,
             timestamp:    timestamp,
-            positionType: entity.positionType ?? null,   // "estimated" = brak VP (pole na poziomie entity)
+            positionType: entity.positionType ?? null,
         });
     }
     return result;
@@ -1477,7 +1486,6 @@ async function refreshVehicles() {
             vehicleBearings[key] = v.bearing;
         }
 
-        // ZMIANA 2b: przekazujemy isEstimated do buildVehicleMarkerHTML
         const { html, bg } = buildVehicleMarkerHTML(
             routeShortName, blockId, v.display_vehicle_id,
             routeType, colorHex, effectiveBearing, s,
@@ -1487,11 +1495,10 @@ async function refreshVehicles() {
         const fullMode = mapa.getZoom() > 14;
         const displayHtml = fullMode ? html : dotHtml;
 
-        // ZMIANA 3a: zapisujemy positionType w metadanych znacznika
         const markerMeta = {
             feedName: v.feed_name,
-            vehicleId: v.vehicle_id ?? null,           // klucz API
-            displayVehicleId: v.display_vehicle_id ?? null,  // do UI (null gdy brak label)
+            vehicleId: v.vehicle_id ?? null,
+            displayVehicleId: v.display_vehicle_id ?? null,
             tripId: v.trip_id ?? null,
             routeId: resolvedRouteId ?? v.route_id ?? null,
             routeShortName,
@@ -1558,7 +1565,6 @@ async function refreshVehicles() {
         }
     }
 
-    // Re-apply stop filter if a stop panel is open (new/updated markers must respect it)
     if (_stopTripFilter !== null && currentStop) {
         _applyStopMarkerFilter([..._stopTripFilter], currentStop.id);
     }
@@ -1612,7 +1618,6 @@ mapa.on('load', () => {
 
                 if (stop.stop_id != null) {
                     const sid = String(stop.stop_id);
-                    // Tag the DOM element so _applyStopMarkerFilter can identify it
                     marker.getElement().dataset.stopId = sid;
                     STOP_META_BY_ID[sid] = {
                         id: sid,
@@ -1630,8 +1635,6 @@ mapa.on('load', () => {
 
             updateStopMarkersVisibility();
 
-            // Jeśli strona została otwarta z adresem /stops/..., spróbuj od razu
-            // otworzyć odpowiedni przystanek po załadowaniu listy przystanków.
             if (window.location.pathname.includes('/stops/')) {
                 openStopViewFromUrl();
             }
@@ -1644,6 +1647,12 @@ mapa.on('load', () => {
     const initialId = (window.INITIAL_SELECTED_VEHICLE_ID || '').trim();
     if (initialId) {
         setTimeout(() => openVehicleViewFromUrl(initialId), 2000);
+    }
+    const initialTripFeed = (window.INITIAL_TRIP_FEED || '').trim();
+    const initialTripId   = (window.INITIAL_TRIP_ID   || '').trim();
+    const initialTripDate = (window.INITIAL_TRIP_DATE || '').trim();
+    if (initialTripId && initialTripFeed && initialTripDate) {
+        setTimeout(() => openTripViewDirect(initialTripFeed, initialTripId, initialTripDate), 500);
     }
 });
 
@@ -1733,7 +1742,6 @@ function _statusMapping(delaySeconds, status, source, hasRealtimePosition) {
     const prefix = hasVp ? 'vp_' : 'no_vp_';
     const showSec = loadSettings().showSeconds;
 
-    // On-time: -59..+59 s
     if (delaySeconds == null || (delaySeconds > -60 && delaySeconds < 60)) {
         return {
             label: 'Planowo',
@@ -1815,8 +1823,6 @@ function _clearTripOverlays() {
     currentTripStopMarkers.forEach(m => m.remove());
     currentTripStopMarkers = [];
 
-    // Remove layer first, then source – prevents async race where the shape
-    // reappears with a default colour after closeVehicleView()
     try { if (mapa.getLayer(TRIP_SHAPE_LAYER_ID)) mapa.removeLayer(TRIP_SHAPE_LAYER_ID); } catch (e) {}
     try { if (mapa.getSource(TRIP_SHAPE_SOURCE_ID)) mapa.removeSource(TRIP_SHAPE_SOURCE_ID); } catch (e) {}
 }
@@ -1888,8 +1894,6 @@ function _renderTripStops(tripStops, lineColor) {
 
     if (!Array.isArray(tripStops) || tripStops.length === 0) return;
 
-    const strokeColor = '#000000';
-
     for (const st of tripStops) {
         const sid = String(st.stop_id);
         const coords = STOP_COORDS_BY_ID[sid];
@@ -1951,14 +1955,11 @@ function _setBaseMarkersVisible(visible) {
 //  STOP VIEW – MARKER FILTERING
 // ════════════════════════════════════════
 
-// Set of trip_ids whose vehicles should be visible when a stop panel is open.
-// null means "no filter active" (normal mode).
-let _stopTripFilter = null;   // Set<string> | null
+let _stopTripFilter = null;
 
 function _applyStopMarkerFilter(tripIds, selectedStopMarkerId) {
     _stopTripFilter = new Set(tripIds.map(String));
 
-    // Stop markers: show only the selected stop
     allStopMarkers.forEach(m => {
         const el = m.getElement();
         if (!el) return;
@@ -1966,7 +1967,6 @@ function _applyStopMarkerFilter(tripIds, selectedStopMarkerId) {
         el.style.display = isSelected ? 'block' : 'none';
     });
 
-    // Vehicle markers: show only those whose tripId is in the filter set
     for (const [key, marker] of Object.entries(vehicleMarkers)) {
         const el = marker.getElement();
         if (!el) continue;
@@ -1979,19 +1979,87 @@ function _applyStopMarkerFilter(tripIds, selectedStopMarkerId) {
 function _clearStopMarkerFilter() {
     _stopTripFilter = null;
 
-    // Restore stop markers according to current zoom
     const showStops = mapa.getZoom() > 14;
     allStopMarkers.forEach(m => {
         const el = m.getElement();
         if (el) el.style.display = showStops ? 'block' : 'none';
     });
 
-    // Restore all vehicle markers
     for (const marker of Object.values(vehicleMarkers)) {
         const el = marker.getElement();
         if (el) el.style.display = 'block';
     }
 }
+
+// ════════════════════════════════════════
+//  ESTIMATED DELAY HELPER
+// ════════════════════════════════════════
+
+/**
+ * Dodaje sekundy do czasu w formacie "HH:MM:SS" (lub "HH:MM") i zwraca "HH:MM:SS".
+ * Obsługuje czasy powyżej 24h (GTFS nocne kursy).
+ */
+function _addSecondsToGtfsTime(timeStr, seconds) {
+    if (!timeStr) return null;
+    const parts = String(timeStr).split(':');
+    if (parts.length < 2) return null;
+    const h  = parseInt(parts[0], 10);
+    const m  = parseInt(parts[1], 10) || 0;
+    const s  = parts.length > 2 ? parseInt(parts[2], 10) || 0 : 0;
+    if ([h, m, s].some(v => Number.isNaN(v))) return null;
+    const totalSec = h * 3600 + m * 60 + s + seconds;
+    const rh = Math.floor(totalSec / 3600);
+    const rm = Math.floor((totalSec % 3600) / 60);
+    const rs = totalSec % 60;
+    return `${String(rh).padStart(2,'0')}:${String(rm).padStart(2,'0')}:${String(rs).padStart(2,'0')}`;
+}
+
+/**
+ * Jeżeli trip ma pole `estimatedDelay` oraz wszystkie przystanki w `realtime.stop_times`
+ * mają `delay_seconds === 0` (API nie podało indywidualnych opóźnień):
+ *  1. Nadpisuje `delay_seconds` wartością z `estimatedDelay.delay_seconds` dla każdego
+ *     przystanku o statusie innym niż "passed".
+ *  2. Jeżeli delay > 0 i real_arrival === scheduled_arrival (lub real_departure === scheduled_departure),
+ *     oblicza rzeczywiste czasy dodając delay do planowych.
+ */
+function _applyEstimatedDelay(trip) {
+    if (!trip) return;
+    const ed = trip.estimatedDelay;
+    if (!ed || ed.delay_seconds == null) return;
+
+    const stopTimes = trip.realtime?.stop_times;
+    if (!Array.isArray(stopTimes) || stopTimes.length === 0) return;
+
+    // Sprawdź czy wszystkie przystanki mają delay_seconds === 0
+    const allZero = stopTimes.every(st => (st.delay_seconds ?? 0) === 0);
+    if (!allZero) return;
+
+    const delay = ed.delay_seconds;
+    for (const st of stopTimes) {
+        if (st.status === 'passed') continue;
+
+        st.delay_seconds = delay;
+
+        // Oblicz real_arrival gdy delay > 0 i real = scheduled (lub real brak)
+        if (delay > 0) {
+            const schedArr = st.scheduled_arrival  || null;
+            const schedDep = st.scheduled_departure || null;
+            const realArr  = st.real_arrival        || null;
+            const realDep  = st.real_departure      || null;
+
+            if (schedArr && (!realArr || realArr === schedArr)) {
+                st.real_arrival = _addSecondsToGtfsTime(schedArr, delay);
+            }
+            if (schedDep && (!realDep || realDep === schedDep)) {
+                st.real_departure = _addSecondsToGtfsTime(schedDep, delay);
+            }
+        }
+    }
+}
+
+// ════════════════════════════════════════
+//  VEHICLE TIMELINE RENDERING
+// ════════════════════════════════════════
 
 function _renderVehicleTimeline() {
     const container = document.getElementById('vc-timeline');
@@ -2013,24 +2081,18 @@ function _renderVehicleTimeline() {
         currentIndex = stopTimes.findIndex(st => st.status === 'upcoming');
     }
 
-    // ZMIANA 4: jeżeli pojazd ma positionType === "estimated", traktujemy
-    // go jak brak pozycji GPS → używamy ikon no_vp_* zamiast vp_*
+    // When positionType === "estimated" treat as no GPS fix → use no_vp_* icons
     const hasRealtimePosition = (currentVehicleTrip.realtime.lat != null && currentVehicleTrip.realtime.lon != null)
         && currentVehicle?.positionType !== 'estimated';
 
-    // Compute line color once (same for all stops) and set CSS variable
     const routeCfg    = ROUTE_TYPE_CONFIG[currentVehicle?.routeType || 3] || ROUTE_TYPE_CONFIG[3];
     const iconUrl     = window.STATIC_URL + 'img/' + routeCfg.icon;
     const lineColor   = currentVehicle?.routeColor ? `#${currentVehicle.routeColor}` : routeCfg.color;
     const borderColor = _darkenColor(lineColor, 0.75);
 
-    // Set the CSS variable so ::before picks up the correct route colour
     container.style.setProperty('--route-line-color', lineColor);
 
-    // ── "Waiting at terminus" detection ─────────────────────────────────────────
-    // Condition: first stop (stop_sequence 0 OR idx 0) has status upcoming/current
-    // AND delay < 0. While true every other stop shows "Planowo" ignoring delay,
-    // and ETA counts down to the SCHEDULED departure of that stop.
+    // ── "Waiting at terminus" detection ──────────────────────────────────────
     const firstSt = stopTimes[0];
     const waitingAtTerminus = !!(
         firstSt &&
@@ -2045,29 +2107,31 @@ function _renderVehicleTimeline() {
         const stopCode = STOP_CODE_BY_ID[sid] || null;
         const fullName = stopCode ? `${name} (${stopCode})` : `${name} (${sid})`;
 
-        const schedDep = st.scheduled_departure || st.scheduled_arrival || '';
-        const realDep  = st.real_departure      || st.real_arrival      || '';
+        // ── Extract all four time fields individually ──────────────────────────
+        const schedArr = st.scheduled_arrival   || '';
+        const schedDep = st.scheduled_departure || '';
+        const realArr  = st.real_arrival        || '';
+        const realDep  = st.real_departure      || '';
 
-        const schedDepDate = _gtfsTimeToDate(schedDep);
-        const realDepDate  = _gtfsTimeToDate(realDep);
+        // For ETA: prefer departure, fall back to arrival
+        const schedEtaDate = _gtfsTimeToDate(schedDep || schedArr);
+        const realEtaDate  = _gtfsTimeToDate(realDep  || realArr);
 
         // In waitingAtTerminus mode all stops use scheduled time for ETA
-        const etaDate = waitingAtTerminus ? schedDepDate : (realDepDate || schedDepDate);
+        const etaDate = waitingAtTerminus ? schedEtaDate : (realEtaDate || schedEtaDate);
         const eta = (st.status === 'upcoming' || st.status === 'current')
             ? _formatEtaLabel(etaDate)
             : null;
 
-        // ── Status mapping ───────────────────────────────────────────────────────
+        // ── Status mapping ─────────────────────────────────────────────────────
         let mapping;
         if (waitingAtTerminus && idx === 0) {
-            // First stop: special "waiting for departure" label
             mapping = {
                 label: 'Oczekiwanie na odjazd',
                 className: 'vehicle-stop-status--ontime',
                 icon: (hasRealtimePosition ? 'vp_' : 'no_vp_') + 'ontime.png',
             };
         } else if (waitingAtTerminus && st.status !== 'passed') {
-            // All other non-passed stops: force "Planowo", ignore delay
             mapping = {
                 label: 'Planowo',
                 className: 'vehicle-stop-status--ontime',
@@ -2081,30 +2145,55 @@ function _renderVehicleTimeline() {
         const isCurrent = idx === currentIndex;
 
         const showSec     = loadSettings().showSeconds;
-        // In waitingAtTerminus mode don't show strikethrough times for any stop
         const hasDelay    = !waitingAtTerminus && st.delay_seconds != null && Math.abs(st.delay_seconds) >= 60;
         const isFutureLike = !isPassed;
 
-        // ── Time column ──────────────────────────────────────────────────────────
-        const fmtTime = (t) => showSec ? t.slice(0, 8) : t.slice(0, 5);
+        // ── Time column builder ────────────────────────────────────────────────
+        // fmtTime: returns slice of time string, empty string for falsy input
+        const fmtTime = (t) => t ? (showSec ? String(t).slice(0, 8) : String(t).slice(0, 5)) : '';
 
-        let topTimeHtml = '';
-        let bottomTimeHtml = '';
-
-        if (isPassed) {
-            topTimeHtml = `<div class="vehicle-stop-time vehicle-stop-time--passed">${fmtTime(schedDep || realDep || '')}</div>`;
-        } else if (hasDelay && isFutureLike && realDep && schedDep && realDep !== schedDep) {
-            const delayClass = st.delay_seconds > 0
-                ? 'vehicle-stop-time vehicle-stop-time--late-main'
-                : 'vehicle-stop-time vehicle-stop-time--early-main';
-            topTimeHtml    = `<div class="vehicle-stop-time vehicle-stop-time--planned-strike">${fmtTime(schedDep)}</div>`;
-            bottomTimeHtml = `<div class="${delayClass}">${fmtTime(realDep)}</div>`;
-        } else {
-            const displayTime = waitingAtTerminus ? (schedDep || realDep || '') : (realDep || schedDep || '');
-            topTimeHtml = `<div class="vehicle-stop-time">${fmtTime(displayTime)}</div>`;
+        /**
+         * Builds 1-2 <div> rows for a single time field (arrival OR departure).
+         * Returns empty string when both sched and real are absent.
+         *
+         * Behaviours:
+         *   passed                  → single grey row (scheduled or real)
+         *   on-time / waitingAtTerm → single normal row (real if available, else sched)
+         *   delayed / early         → strikethrough scheduled + coloured real
+         */
+        function _buildTimeGroup(sched, real) {
+            if (!sched && !real) return '';
+            if (isPassed) {
+                return `<div class="vehicle-stop-time vehicle-stop-time--passed">${fmtTime(sched || real)}</div>`;
+            }
+            // Show strikethrough only when delay is significant AND we are not in
+            // "waiting at terminus" mode AND both sched and real differ
+            if (hasDelay && isFutureLike && real && sched && real !== sched) {
+                const cls = st.delay_seconds > 0
+                    ? 'vehicle-stop-time vehicle-stop-time--late-main'
+                    : 'vehicle-stop-time vehicle-stop-time--early-main';
+                return `<div class="vehicle-stop-time vehicle-stop-time--planned-strike">${fmtTime(sched)}</div>` +
+                       `<div class="${cls}">${fmtTime(real)}</div>`;
+            }
+            // Normal / waitingAtTerminus: prefer scheduled when waiting, real otherwise
+            const display = waitingAtTerminus ? (sched || real) : (real || sched);
+            return `<div class="vehicle-stop-time">${fmtTime(display)}</div>`;
         }
 
-        // ── Dot column ───────────────────────────────────────────────────────────
+        // Jeżeli scheduled_arrival === scheduled_departure (lub jedno z nich jest puste),
+        // traktujemy przystanek jako „tylko odjazd" i nie pokazujemy osobnej linii przyjazdu.
+        const arrDepSame = !schedArr || !schedDep || schedArr === schedDep;
+
+        // Build arrival and departure HTML groups independently
+        const arrHtml = arrDepSame ? '' : _buildTimeGroup(schedArr, realArr);
+        const depHtml = _buildTimeGroup(schedDep, realDep);
+        // Visual gap between the two groups (only rendered when both exist)
+        const timeSep = (arrHtml && depHtml)
+            ? '<div class="vehicle-stop-time-sep"></div>'
+            : '';
+        const timeColHtml = arrHtml + timeSep + depHtml;
+
+        // ── Dot column ─────────────────────────────────────────────────────────
         const dotClasses = ['vehicle-stop-dot'];
         if (isPassed)  dotClasses.push('vehicle-stop-dot--passed');
         if (isCurrent) dotClasses.push('vehicle-stop-dot--current');
@@ -2116,7 +2205,7 @@ function _renderVehicleTimeline() {
                             mask:url('${iconUrl}') no-repeat center/contain;"></div>
             </div>` : '';
 
-        // ── Name + status column ─────────────────────────────────────────────────
+        // ── Name + status column ───────────────────────────────────────────────
         const nameClasses   = ['vehicle-stop-name'];
         if (isPassed) nameClasses.push('vehicle-stop-name--passed');
 
@@ -2129,13 +2218,12 @@ function _renderVehicleTimeline() {
 
         pieces.push(`
             <div class="vehicle-stop">
-                <!-- time column -->
+                <!-- time column: arrival (top) then departure (bottom) -->
                 <div class="vehicle-stop-times">
-                    ${topTimeHtml}
-                    ${bottomTimeHtml}
+                    ${timeColHtml}
                 </div>
 
-                <!-- dot (line is drawn by timeline::before) -->
+                <!-- dot (line drawn by timeline::before) -->
                 <div class="vehicle-stop-line">
                     <div class="${dotClasses.join(' ')}"></div>
                     ${vehicleIconHtml}
@@ -2160,7 +2248,6 @@ function _renderVehicleTimeline() {
     if (noData) noData.style.display = 'none';
 
     // ── Autoscroll to the current/upcoming stop ───────────────────────────────
-    // Fires on first open (one-shot flag) OR whenever follow mode is active.
     if (_pendingInitialScroll || followVehicleEnabled) {
         _pendingInitialScroll = false;
         requestAnimationFrame(() => {
@@ -2239,8 +2326,9 @@ async function loadVehicleTripData(meta) {
 
     if (!currentVehicle.routeId && currentVehicleTrip.route_id) currentVehicle.routeId = currentVehicleTrip.route_id;
     if (!currentVehicle.headsign && currentVehicleTrip.headsign) currentVehicle.headsign = currentVehicleTrip.headsign;
-    // positionType może być zwrócony bezpośrednio przez getTripByVehicle (np. "estimated")
     if (currentVehicleTrip.positionType != null) currentVehicle.positionType = currentVehicleTrip.positionType;
+
+    _applyEstimatedDelay(currentVehicleTrip);
 
     _updateVehicleHeader();
     _renderVehicleTimeline();
@@ -2310,18 +2398,15 @@ function _updateVehicleTooltip() {
     const metaWrap = vehicleMarkerMeta[currentVehicleMarkerKey];
     if (!metaWrap) return;
 
-    // Pozycja na ekranie
     const point = mapa.project([pos.lon, pos.lat]);
     tooltip.style.left = Math.round(point.x) + 'px';
     tooltip.style.top  = Math.round(point.y) + 'px';
 
-    // Ikony
     const speedIconEl = document.getElementById('vt-speed-icon');
     const clockIconEl = document.getElementById('vt-clock-icon');
     if (speedIconEl) speedIconEl.src = window.STATIC_URL + 'img/speedometer.png';
     if (clockIconEl) clockIconEl.src = window.STATIC_URL + 'img/clock_szary.png';
 
-    // Nazwa środka transportu
     const routeType = metaWrap.meta?.routeType ?? 3;
     const cfg = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
     const displayVehicleNum = metaWrap.meta?.displayVehicleId ?? null;
@@ -2330,7 +2415,6 @@ function _updateVehicleTooltip() {
         ? `${cfg.name} <b>#${displayVehicleNum}</b>`
         : cfg.name;
 
-    // Prędkość: m/s → km/h
     const speedEl = document.getElementById('vt-speed');
     if (speedEl) {
         if (metaWrap.speed != null) {
@@ -2340,7 +2424,6 @@ function _updateVehicleTooltip() {
         }
     }
 
-    // Czas od ostatniej aktualizacji
     const ts     = metaWrap.timestamp;
     const timeEl = document.getElementById('vt-time');
     if (timeEl) {
@@ -2390,7 +2473,6 @@ function _clearStopDepartures() {
 function openStopView(meta) {
     if (!meta) return;
 
-    // Zamknij ewentualny widok pojazdu
     closeVehicleView();
 
     currentStop = meta;
@@ -2444,7 +2526,7 @@ function closeStopView(pushUrl = true) {
 }
 
 function _formatTimeHHMM(timeStr) {
-    if (!timeStr) return '--:--';
+    if (!timeStr) return null;
     return String(timeStr).slice(0, 5);
 }
 
@@ -2471,15 +2553,20 @@ function loadStopDepartures(meta) {
             );
 
             upcoming.sort((a, b) => {
-                const ta = _combineDateTimeToDate(a.date || today, a.real_departure || a.departure_time || a.arrival_time);
-                const tb = _combineDateTimeToDate(b.date || today, b.real_departure || b.departure_time || b.arrival_time);
+                const ta = _combineDateTimeToDate(
+                    a.date || today,
+                    a.real_departure || a.departure_time || a.real_arrival || a.arrival_time
+                );
+                const tb = _combineDateTimeToDate(
+                    b.date || today,
+                    b.real_departure || b.departure_time || b.real_arrival || b.arrival_time
+                );
                 if (!ta && !tb) return 0;
                 if (!ta) return 1;
                 if (!tb) return -1;
                 return ta - tb;
             });
 
-            // Collect unique trip_ids for vehicle marker filtering
             const tripIds = [...new Set(upcoming.map(s => s.trip_id).filter(Boolean))];
             _applyStopMarkerFilter(tripIds, meta.id);
 
@@ -2493,8 +2580,16 @@ function loadStopDepartures(meta) {
         });
 }
 
+function _findMarkerKeyByTripId(tripId) {
+    if (!tripId) return null;
+    for (const [key, wrap] of Object.entries(vehicleMarkerMeta)) {
+        if (String(wrap.meta?.tripId) === String(tripId)) return key;
+    }
+    return null;
+}
+
 function renderStopDepartures(rows) {
-    const msg = document.getElementById('sp-message');
+    const msg  = document.getElementById('sp-message');
     const list = document.getElementById('sp-departures-list');
     if (!list) return;
 
@@ -2508,13 +2603,12 @@ function renderStopDepartures(rows) {
     }
 
     const today = _todayDate();
-    const now = new Date();
+    const now   = new Date();
 
     const pieces = rows.map(item => {
-        const line = item.route_short_name || item.route_id || '?';
+        const line     = item.route_short_name || item.route_id || '?';
         const headsign = item.headsign || '';
 
-        // Resolve route details from cache for color and icon
         const feedName  = item.feed_name || (window.GTFS_FEEDS?.[0]?.name ?? '');
         const routeId   = item.route_id || '';
         const cached    = routeDetailsCache[`${feedName}:${routeId}`] || null;
@@ -2524,18 +2618,41 @@ function renderStopDepartures(rows) {
         const iconUrl   = window.STATIC_URL + 'img/' + routeCfg.icon;
 
         const dateStr = item.date || today;
-        const timeStr = item.real_departure || item.departure_time || item.arrival_time;
+
+        // ── Decide which times to display ─────────────────────────────────────
+        // Use real times when realtime data is available (not static, not estimated).
+        const hasRt = !!(item.rt_source && item.rt_source !== 'static')
+                      && item.position_type !== 'estimated';
+
+        const rawArr = hasRt
+            ? (item.real_arrival   || item.arrival_time   || null)
+            : (item.arrival_time   || null);
+        const rawDep = hasRt
+            ? (item.real_departure || item.departure_time || null)
+            : (item.departure_time || null);
+
+        const dispArr = _formatTimeHHMM(rawArr);   // null when not available
+        const dispDep = _formatTimeHHMM(rawDep);   // null when not available
+
+        // Combined "arr / dep" string; single value when both are equal or one is missing
+        let stopTimeDisplay;
+        if (dispArr && dispDep && dispArr !== dispDep) {
+            stopTimeDisplay = `${dispArr}&nbsp;/&nbsp;${dispDep}`;
+        } else {
+            stopTimeDisplay = dispArr || dispDep || '--:--';
+        }
+
+        // For ETA use departure time first, fall back to arrival
+        const etaTimeStr = item.real_departure || item.departure_time
+                         || item.real_arrival  || item.arrival_time;
 
         let etaLabel = '';
         if (dateStr === today) {
-            const dt = _combineDateTimeToDate(dateStr, timeStr);
-            if (dt && dt > now) {
-                etaLabel = _formatEtaLabel(dt) || '';
-            }
+            const dt = _combineDateTimeToDate(dateStr, etaTimeStr);
+            if (dt && dt > now) etaLabel = _formatEtaLabel(dt) || '';
         }
 
-        const hasRealtimePosition = (item.rt_source && item.rt_source !== 'static')
-            && item.position_type !== 'estimated';
+        const hasRealtimePosition = hasRt && item.position_type !== 'estimated';
 
         const mapping = _statusMapping(
             item.delay_seconds,
@@ -2544,8 +2661,16 @@ function renderStopDepartures(rows) {
             hasRealtimePosition
         );
 
+        const markerKey = _findMarkerKeyByTripId(item.trip_id);
+
+        const clickable = 'stop-departure-row--clickable';
+
         return `
-        <div class="stop-departure-row">
+        <div class="stop-departure-row ${clickable}"
+             data-trip-id="${item.trip_id || ''}"
+             data-feed-name="${feedName}"
+             data-date="${dateStr}"
+             data-has-vehicle="${markerKey ? '1' : '0'}">
             <div class="stop-departure-line-badge" style="background:${badgeBg};">
                 <img class="stop-departure-line-icon" src="${iconUrl}" alt="">
                 <div class="stop-departure-line-name">${line}</div>
@@ -2559,7 +2684,7 @@ function renderStopDepartures(rows) {
                 </div>
             </div>
             <div class="stop-departure-time-col">
-                <div class="stop-departure-time-main">${_formatTimeHHMM(timeStr)}</div>
+                <div class="stop-departure-time-main">${stopTimeDisplay}</div>
                 <div class="stop-departure-eta">${etaLabel}</div>
             </div>
         </div>`;
@@ -2567,6 +2692,26 @@ function renderStopDepartures(rows) {
 
     list.innerHTML = pieces.join('');
     if (msg) msg.style.display = 'none';
+
+    // Event delegation
+    list.onclick = (e) => {
+        const row = e.target.closest('.stop-departure-row--clickable');
+        if (!row) return;
+        const tripId   = row.dataset.tripId;
+        const feedName = row.dataset.feedName;
+        const date     = row.dataset.date;
+        if (!tripId) return;
+
+        if (row.dataset.hasVehicle === '1') {
+            const key = _findMarkerKeyByTripId(tripId);
+            if (key) { openVehicleViewFromMarker(key); return; }
+        }
+
+        if (feedName && date) {
+            window.location.href =
+                `/${window.CITY_NAME}/trip/${encodeURIComponent(feedName)}/${encodeURIComponent(tripId)}/${date}/`;
+        }
+    };
 }
 
 function openStopViewFromId(stopId) {
@@ -2584,7 +2729,6 @@ function openStopViewFromUrl() {
     if (!slug) return;
     slug = decodeURIComponent(slug);
 
-    // Dopasuj po wygenerowanym slugu, żeby nie polegać wyłącznie na ID
     for (const meta of Object.values(STOP_META_BY_ID)) {
         if (_buildStopSlug(meta) === encodeURIComponent(slug)) {
             openStopView(meta);
@@ -2592,7 +2736,6 @@ function openStopViewFromUrl() {
         }
     }
 
-    // Fallback: spróbuj znaleźć po nazwie i kodzie
     const underscoreIdx = slug.lastIndexOf('_');
     if (underscoreIdx === -1) return;
     const namePart = slug.slice(0, underscoreIdx);
@@ -2608,7 +2751,6 @@ function openStopViewFromUrl() {
 
 function openVehicleView(meta) {
     if (!meta) return;
-    // Gdy otwieramy widok pojazdu, zamknij ewentualny widok przystanku
     if (typeof closeStopView === 'function') {
         closeStopView(false);
     }
@@ -2627,7 +2769,6 @@ function openVehicleView(meta) {
     const panel = document.getElementById('vehicle-course-panel');
     if (panel) panel.classList.remove('vehicle-panel-hidden');
 
-    // Reset panel body to minimum height when opening a new vehicle
     _setPanelBodyH(PANEL_BODY_MIN_H, true);
 
     _updateVehicleHeader();
@@ -2652,7 +2793,6 @@ function closeVehicleView() {
     if (timeline) timeline.innerHTML = '';
     if (noData)   { noData.textContent = 'Wybierz pojazd na mapie, aby zobaczyć szczegóły kursu.'; noData.style.display = 'block'; }
 
-    // Reset height for next open
     _setPanelBodyH(PANEL_BODY_MIN_H, false);
 
     updateGpsButtonState();
@@ -2728,6 +2868,150 @@ async function openVehicleViewFromUrl(vehicleId) {
     if (noData) { noData.textContent = 'Pojazd nie jest aktualnie aktywny lub brak danych o kursie.'; noData.style.display = 'block'; }
 }
 
+// ════════════════════════════════════════
+//  TRIP VIEW (kurs bez pojazdu)
+// ════════════════════════════════════════
+
+function _buildStaticStopTimes(stops) {
+    if (!Array.isArray(stops)) return [];
+    const now = new Date();
+    return stops.map(st => {
+        const depDate = _gtfsTimeToDate(st.departure_time || st.arrival_time || '');
+        const isPassed = depDate ? depDate < now : false;
+        return {
+            stop_id:              st.stop_id,
+            scheduled_arrival:    st.arrival_time   || '',
+            scheduled_departure:  st.departure_time || st.arrival_time || '',
+            real_arrival:         null,
+            real_departure:       null,
+            delay_seconds:        null,
+            status:               isPassed ? 'passed' : 'upcoming',
+            source:               'static',
+        };
+    });
+}
+
+async function openTripViewDirect(feedName, tripId, date) {
+    closeStopView(false);
+
+    currentVehicle          = null;
+    currentVehicleTrip      = null;
+    currentVehicleMarkerKey = null;
+    followVehicleEnabled    = false;
+    _pendingInitialScroll   = true;
+
+    _setBaseMarkersVisible(false);
+
+    const panel    = document.getElementById('vehicle-course-panel');
+    const noData   = document.getElementById('vc-no-data');
+    const timeline = document.getElementById('vc-timeline');
+    if (panel)    panel.classList.remove('vehicle-panel-hidden');
+    if (noData)   { noData.textContent = 'Ładowanie danych kursu...'; noData.style.display = 'block'; }
+    if (timeline) timeline.innerHTML = '';
+
+    _setPanelBodyH(PANEL_BODY_MIN_H, true);
+
+    try {
+        const resp = await fetch(
+            `/api/getTripDetails.json?city=${window.CITY_NAME}` +
+            `&feed_name=${encodeURIComponent(feedName)}` +
+            `&date=${date}` +
+            `&trip_id=${encodeURIComponent(tripId)}`
+        );
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+
+        let routeType      = 3;
+        let normalizedColor = null;
+        let routeShortName = data.route_short_name || data.route_id || null;
+
+        if (data.route_id && feedName) {
+            await _fetchAllRouteDetailsForFeed(feedName);
+            const route = routeDetailsCache[`${feedName}:${data.route_id}`] || null;
+            if (route) {
+                routeType      = route.route_type != null ? route.route_type : 3;
+                const rawColor = route.color || route.route_color || null;
+                normalizedColor = rawColor ? rawColor.replace(/^#/, '') : null;
+                routeShortName = route.route_short_name || data.route_id;
+            }
+        }
+
+        currentVehicle = {
+            feedName,
+            vehicleId:      null,
+            tripId,
+            routeId:        data.route_id   || null,
+            routeShortName,
+            routeColor:     normalizedColor,
+            routeType,
+            headsign:       data.headsign   || null,
+            positionType:   data.realtime?.positionType ?? null,
+        };
+
+        const rt = data.realtime ?? null;
+        const routeCfg = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
+
+        let realtimeBlock;
+
+        if (rt && Array.isArray(rt.stop_times) && rt.stop_times.length > 0) {
+            realtimeBlock = {
+                lat:          rt.lat          ?? null,
+                lon:          rt.lon          ?? null,
+                positionType: rt.positionType ?? null,
+                stop_times:   rt.stop_times,
+            };
+        } else if (rt && rt.lat != null && rt.lon != null) {
+            realtimeBlock = {
+                lat:          rt.lat,
+                lon:          rt.lon,
+                positionType: rt.positionType ?? null,
+                stop_times:   _buildStaticStopTimes(data.stops || []),
+            };
+        } else {
+            realtimeBlock = {
+                lat:          null,
+                lon:          null,
+                positionType: null,
+                stop_times:   _buildStaticStopTimes(data.stops || []),
+            };
+        }
+
+        currentVehicleTrip = {
+            trip_id:        tripId,
+            route_id:       data.route_id  || null,
+            headsign:       data.headsign  || null,
+            estimatedDelay: data.estimatedDelay ?? null,
+            realtime:       realtimeBlock,
+        };
+
+        _applyEstimatedDelay(currentVehicleTrip);
+
+        _updateVehicleHeader();
+        _renderVehicleTimeline();
+        updateGpsButtonState();
+
+        const lineColor = currentVehicle.routeColor ? `#${currentVehicle.routeColor}` : routeCfg.color;
+        _renderTripShape(data.shape  || [], lineColor);
+        _renderTripStops(data.stops  || [], lineColor);
+
+        if (!vehicleTripRefreshTimer) {
+            vehicleTripRefreshTimer = setInterval(async () => {
+                if (!currentVehicle || currentVehicle.vehicleId !== null) return;
+                await openTripViewDirect(feedName, tripId, date);
+            }, 10_000);
+        }
+
+    } catch (e) {
+        console.error('Błąd ładowania danych kursu:', e);
+        if (noData) {
+            noData.textContent = 'Nie udało się załadować danych kursu.';
+            noData.style.display = 'block';
+        }
+        _setBaseMarkersVisible(true);
+    }
+}
+
+
 // ── Panel button listeners ────────────────────────────────────────────────────
 document.getElementById('vc-close-btn').addEventListener('click', () => {
     closeVehicleView();
@@ -2748,21 +3032,30 @@ document.getElementById('vc-more-btn').addEventListener('click', () => {});
 
 // ── Browser history ───────────────────────────────────────────────────────────
 window.addEventListener('popstate', (event) => {
-    const path = window.location.pathname || '';
+    const path  = window.location.pathname || '';
     const state = event.state || {};
 
-    // Priorytet: widok przystanku
-    let stopId = state.stopId ?? null;
+    if (path.includes('/trip/')) {
+        const parts = path.split('/trip/')[1]?.split('/').filter(Boolean);
+        if (parts && parts.length >= 3) {
+            const [feedName, tripId, date] = parts;
+            openTripViewDirect(
+                decodeURIComponent(feedName),
+                decodeURIComponent(tripId),
+                date
+            );
+            return;
+        }
+    }
+
     if (path.includes('/stops/')) {
-        // Gdy adres zawiera /stops/, odtwórz widok przystanku z URL
         openStopViewFromUrl();
         return;
-    } else if (stopId) {
-        openStopViewFromId(stopId);
+    } else if (state.stopId) {
+        openStopViewFromId(state.stopId);
         return;
     }
 
-    // Następnie widok pojazdu
     let vehicleId = state.vehicleId ?? null;
     if (!vehicleId && path.includes('/vehicle/')) {
         const after = path.split('/vehicle/')[1] || '';
