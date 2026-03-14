@@ -25,7 +25,7 @@ def city_detail(request, city_slug, vehicle_id=None):
 
 
 def get_stops_api(request, city_slug):
-    """API endpoint zwracający przystanki dla danego miasta"""
+    """API endpoint zwracający przystanki dla danego miasta."""
     city = get_object_or_404(City, name=city_slug)
     feeds = GTFSFeed.objects.filter(city=city, is_active=True)
 

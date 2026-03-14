@@ -584,6 +584,17 @@ Pobiera i parsuje wszystkie feedy realtime skonfigurowane dla danego `GTFSFeed`,
 - Pliki `.pb` (protobuf) — vehicle positions, trip updates, alerts jako osobne URL-e lub jeden wspólny plik.
 - Feedy w formacie **JSON** (camelCase i snake_case).
 
+**Zachowanie przy braku VehiclePositions**
+
+- Jeżeli feed RT zawiera **TripUpdates**, ale nie dostarcza `VehiclePositions`, serwer:
+  - korzysta z danych statycznych GTFS (`trips.txt`, `stop_times.txt`, `stops.txt`, `shapes.txt`) oraz z `TripUpdates`,
+  - dla aktywnych kursów wyznacza przybliżoną aktualną pozycję pojazdu na trasie,
+  - generuje **syntetyczne encje `vehicle`** w unified feedzie (`entity[].vehicle`), tak aby struktura była kompatybilna z GTFS-RT.
+- Syntetyczne pojazdy:
+  - posiadają identyfikator `vehicle.vehicle.id` w postaci `EST-<trip_id>`,
+  - mają wypełnione pole `position.latitude` / `position.longitude` na podstawie interpolacji po `shape_dist_traveled` (z fallbackiem do interpolacji między przystankami),
+  - opcjonalnie mają uzupełnione `currentStopSequence` na podstawie ostatniego minionego / najbliższego przystanku.
+
 **Odpowiedź gdy brak skonfigurowanych URL-i RT**
 
 ```json

@@ -253,6 +253,101 @@
             padding: 4px 2px;
         }
 
+        /* ── Stop panel tabs & departures ── */
+        .stop-panel-tabs {
+            display: flex;
+            gap: 8px;
+            margin: 4px 0 8px 0;
+        }
+        .stop-tab {
+            flex: 1;
+            border: none;
+            border-radius: 999px;
+            padding: 6px 10px;
+            background: #14161A;
+            color: #AEB2B8;
+            font-family: 'Roboto', sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+        }
+        .stop-tab-active {
+            background: #1F2227;
+            color: #FFFFFF;
+        }
+        .stop-panel-body {
+            margin-top: 4px;
+        }
+        .stop-departure-row {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            column-gap: 10px;
+            align-items: center;
+            padding: 6px 0;
+        }
+        .stop-departure-line-badge {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-width: 52px;
+            padding: 5px 8px;
+            border-radius: 10px;
+            background: #2C95D0;
+            gap: 3px;
+        }
+        .stop-departure-line-icon {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+        .stop-departure-line-name {
+            font-family: 'Roboto', sans-serif;
+            font-weight: 700;
+            font-size: 16px;
+            color: #FFFFFF;
+        }
+        .stop-departure-headsign {
+            font-family: 'Roboto', sans-serif;
+            font-size: 15px;
+            font-weight: 500;
+            color: #E7E8E8;
+        }
+        .stop-departure-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .stop-departure-status-row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .stop-departure-status {
+            font-family: 'Roboto', sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .stop-departure-time-col {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+        }
+        .stop-departure-time-main {
+            font-family: 'Roboto', sans-serif;
+            font-size: 18px;
+            font-weight: 500;
+            color: #E7E8E8;
+        }
+        .stop-departure-eta {
+            font-family: 'Roboto', sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            color: #9FA3A8;
+        }
+
         /* ── Timeline: single continuous line via ::before ── */
         .vehicle-timeline {
             display: flex;
@@ -587,6 +682,46 @@
     </div>
 </div>
 
+<!-- ══ STOP PANEL ══ -->
+<div id="stop-panel" class="vehicle-panel vehicle-panel-hidden">
+    <div class="vehicle-panel-card">
+        <!-- Drag handle – swipe up/down to resize; drag to bottom closes the panel -->
+        <div class="drag-handle" id="sp-drag-handle">
+            <div class="drag-handle-bar"></div>
+        </div>
+        <div class="vehicle-panel-header">
+            <div id="sp-stop-badge" class="vehicle-badge" style="background:#2C95D0;">
+                <div id="sp-stop-icons" class="vehicle-badge-icon"></div>
+            </div>
+            <div id="sp-stop-title" class="vehicle-headsign">
+                Wybierz przystanek na mapie
+            </div>
+            <div class="vehicle-panel-buttons">
+                <button id="sp-fav-btn" class="vehicle-btn" type="button">
+                    <img src="{% static 'img/ulub.png' %}" alt="Ulubione">
+                </button>
+                <button id="sp-clock-btn" class="vehicle-btn" type="button">
+                    <img src="{% static 'img/clock.png' %}" alt="Zegar">
+                </button>
+                <button id="sp-close-btn" class="vehicle-btn" type="button">
+                    <img src="{% static 'img/close.png' %}" alt="Zamknij">
+                </button>
+            </div>
+        </div>
+        <div class="stop-panel-tabs">
+            <button class="stop-tab stop-tab-active" data-mode="nearest">Najbliższe odjazdy</button>
+            <button class="stop-tab" data-mode="table">Rozkład tabelkowy</button>
+            <button class="stop-tab" data-mode="ascending">Odjazdy rosnące</button>
+        </div>
+        <div class="vehicle-panel-body stop-panel-body" id="sp-panel-body">
+            <div id="sp-message" class="vehicle-no-data">
+                Wybierz przystanek na mapie, aby zobaczyć odjazdy.
+            </div>
+            <div id="sp-departures-list"></div>
+        </div>
+    </div>
+</div>
+
 <!-- ══ MENU OVERLAY ══ -->
 <div id="menu-overlay" class="overlay-hidden">
     <div class="selection-card">
@@ -789,14 +924,16 @@ lucide.createIcons();
 const PANEL_BODY_MIN_H = 175;  // ~3 stops visible
 const PANEL_BODY_MAX_H = Math.round(window.innerHeight * 0.55);
 
-// Apply initial (min) height
-(function initPanelHeight() {
-    const body = document.getElementById('vc-panel-body');
-    if (body) body.style.maxHeight = PANEL_BODY_MIN_H + 'px';
+// Apply initial (min) height to both panels
+(function initPanelHeights() {
+    ['vc-panel-body', 'sp-panel-body'].forEach(id => {
+        const body = document.getElementById(id);
+        if (body) body.style.maxHeight = PANEL_BODY_MIN_H + 'px';
+    });
 })();
 
-function _setPanelBodyH(px, animated) {
-    const body = document.getElementById('vc-panel-body');
+function _setPanelBodyH(px, animated, bodyId) {
+    const body = document.getElementById(bodyId || 'vc-panel-body');
     if (!body) return;
     if (animated) {
         body.style.transition = 'max-height 0.3s ease';
@@ -807,16 +944,17 @@ function _setPanelBodyH(px, animated) {
     body.style.maxHeight = Math.max(0, Math.min(PANEL_BODY_MAX_H, px)) + 'px';
 }
 
-(function initDrag() {
-    const handle  = document.getElementById('vc-drag-handle');
+function _initPanelDrag(handleId, bodyId, closeCallback) {
+    const handle = document.getElementById(handleId);
     if (!handle) return;
 
-    let dragging  = false;
-    let startY    = 0;
-    let startH    = 0;
+    let dragging      = false;
+    let startY        = 0;
+    let startH        = 0;
+    let _activeTouchId = null;
 
     function getBodyH() {
-        const b = document.getElementById('vc-panel-body');
+        const b = document.getElementById(bodyId);
         return b ? b.offsetHeight : PANEL_BODY_MIN_H;
     }
 
@@ -830,25 +968,26 @@ function _setPanelBodyH(px, animated) {
     function onMove(clientY) {
         if (!dragging) return;
         const dy = startY - clientY;   // drag up → positive → expand
-        _setPanelBodyH(startH + dy, false);
+        _setPanelBodyH(startH + dy, false, bodyId);
     }
 
     function onEnd(clientY) {
         if (!dragging) return;
-        dragging = false;
+        dragging       = false;
+        _activeTouchId = null;
         document.body.style.userSelect = '';
 
         const currentH = getBodyH();
 
         // Zamknij jeśli przeciągnięto bardzo nisko (poniżej 30% wysokości minimalnej)
         if (currentH < PANEL_BODY_MIN_H * 0.3) {
-            closeVehicleView();
+            closeCallback();
             return;
         }
 
         // Snap do minimum jeśli poniżej PANEL_BODY_MIN_H, inaczej zostaw na aktualnej pozycji
         if (currentH < PANEL_BODY_MIN_H) {
-            _setPanelBodyH(PANEL_BODY_MIN_H, true);
+            _setPanelBodyH(PANEL_BODY_MIN_H, true, bodyId);
         }
         // Powyżej minimum: panel pozostaje dokładnie tam gdzie użytkownik puścił
     }
@@ -860,17 +999,27 @@ function _setPanelBodyH(px, animated) {
 
     // Touch
     handle.addEventListener('touchstart', e => {
-        onStart(e.touches[0].clientY);
+        if (_activeTouchId !== null) return;
+        _activeTouchId = e.changedTouches[0].identifier;
+        onStart(e.changedTouches[0].clientY);
     }, { passive: true });
     document.addEventListener('touchmove', e => {
         if (!dragging) return;
-        onMove(e.touches[0].clientY);
+        const t = [...e.changedTouches].find(touch => touch.identifier === _activeTouchId);
+        if (!t) return;
+        onMove(t.clientY);
         e.preventDefault();   // prevent page scroll while dragging panel
     }, { passive: false });
     document.addEventListener('touchend', e => {
-        if (dragging) onEnd(e.changedTouches[0].clientY);
+        if (!dragging) return;
+        const t = [...e.changedTouches].find(touch => touch.identifier === _activeTouchId);
+        if (t) onEnd(t.clientY);
     });
-})();
+}
+
+// Inicjalizacja drag dla obu paneli
+_initPanelDrag('vc-drag-handle', 'vc-panel-body', () => closeVehicleView());
+_initPanelDrag('sp-drag-handle', 'sp-panel-body', () => closeStopView());
 
 
 // ════════════════════════════════════════
@@ -998,6 +1147,11 @@ const STOP_NAME_BY_ID = {};
 const STOP_CODE_BY_ID = {};
 const STOP_COORDS_BY_ID = {};
 
+// Metadane przystanków i stan panelu przystanku
+const STOP_META_BY_ID = {};
+let currentStop = null;
+let stopDeparturesRefreshTimer = null;
+
 // ════════════════════════════════════════
 //  STOP MARKERS
 // ════════════════════════════════════════
@@ -1026,11 +1180,24 @@ function createStopMarkerHTML(routeTypes) {
     </div>`;
 }
 
+function buildStopBadgeIcons(routeTypes) {
+    const uniqueTypes = [...new Set(routeTypes)];
+    return uniqueTypes.map(type => {
+        const cfg = ROUTE_TYPE_CONFIG[type];
+        if (!cfg) return '';
+        const url = window.STATIC_URL + 'img/' + cfg.icon;
+        return `<div style="width:16px;height:16px;
+            -webkit-mask:url('${url}') no-repeat center/contain;
+            mask:url('${url}') no-repeat center/contain;
+            background-color:rgba(0,30,60,0.75);"></div>`;
+    }).join('');
+}
+
 function updateStopMarkersVisibility() {
     clearTimeout(_zoomTimeout);
     _zoomTimeout = setTimeout(() => {
-        // When a vehicle course is open, base stop markers must stay hidden
-        if (currentVehicle) return;
+        // When a vehicle course or stop filter is active, don't touch marker visibility
+        if (currentVehicle || _stopTripFilter !== null) return;
         const show = mapa.getZoom() > 14;
         allStopMarkers.forEach(m => {
             m.getElement().style.display = show ? 'block' : 'none';
@@ -1390,6 +1557,11 @@ async function refreshVehicles() {
             delete vehicleBearings[key];
         }
     }
+
+    // Re-apply stop filter if a stop panel is open (new/updated markers must respect it)
+    if (_stopTripFilter !== null && currentStop) {
+        _applyStopMarkerFilter([..._stopTripFilter], currentStop.id);
+    }
 }
 
 // ════════════════════════════════════════
@@ -1434,14 +1606,35 @@ mapa.on('load', () => {
                 el.className = 'custom-marker';
                 const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
                     .setLngLat([stop.lon, stop.lat])
-                    .setPopup(new maplibregl.Popup({ offset: 15 })
-                        .setHTML(`<strong>${stop.stop_name}</strong>`))
                     .addTo(mapa);
                 marker.getElement().style.zIndex = '1';
                 allStopMarkers.push(marker);
+
+                if (stop.stop_id != null) {
+                    const sid = String(stop.stop_id);
+                    // Tag the DOM element so _applyStopMarkerFilter can identify it
+                    marker.getElement().dataset.stopId = sid;
+                    STOP_META_BY_ID[sid] = {
+                        id: sid,
+                        name: stop.stop_name || `Przystanek ${sid}`,
+                        code: STOP_CODE_BY_ID[sid] || null,
+                        routeTypes,
+                        lat: stop.lat,
+                        lon: stop.lon,
+                    };
+                    marker.getElement().onclick = () => {
+                        openStopViewFromId(sid);
+                    };
+                }
             });
 
             updateStopMarkersVisibility();
+
+            // Jeśli strona została otwarta z adresem /stops/..., spróbuj od razu
+            // otworzyć odpowiedni przystanek po załadowaniu listy przystanków.
+            if (window.location.pathname.includes('/stops/')) {
+                openStopViewFromUrl();
+            }
         })
         .catch(e => console.error('Błąd ładowania przystanków:', e));
 
@@ -1564,6 +1757,20 @@ function _statusMapping(delaySeconds, status, source, hasRealtimePosition) {
         ? (secs > 0 ? `${mins} min i ${secs} s przed czasem` : `${mins} min przed czasem`)
         : `${mins} min przed czasem`;
     return { label, className: 'vehicle-stop-status--early', icon: `${prefix}early.png` };
+}
+
+function _combineDateTimeToDate(dateStr, timeStr) {
+    if (!dateStr || !timeStr) return null;
+    const y = Number(dateStr.slice(0, 4));
+    const m = Number(dateStr.slice(4, 6)) - 1;
+    const d = Number(dateStr.slice(6, 8));
+    const parts = String(timeStr).split(':');
+    if (parts.length < 2) return null;
+    const h = parseInt(parts[0], 10);
+    const mi = parseInt(parts[1], 10) || 0;
+    const s = parts.length > 2 ? parseInt(parts[2], 10) || 0 : 0;
+    if ([y, m, d, h, mi, s].some(v => Number.isNaN(v))) return null;
+    return new Date(y, m, d, h, mi, s, 0);
 }
 
 function _darkenColor(hex, factor) {
@@ -1737,6 +1944,52 @@ function _setBaseMarkersVisible(visible) {
         } else {
             el.style.display = display;
         }
+    }
+}
+
+// ════════════════════════════════════════
+//  STOP VIEW – MARKER FILTERING
+// ════════════════════════════════════════
+
+// Set of trip_ids whose vehicles should be visible when a stop panel is open.
+// null means "no filter active" (normal mode).
+let _stopTripFilter = null;   // Set<string> | null
+
+function _applyStopMarkerFilter(tripIds, selectedStopMarkerId) {
+    _stopTripFilter = new Set(tripIds.map(String));
+
+    // Stop markers: show only the selected stop
+    allStopMarkers.forEach(m => {
+        const el = m.getElement();
+        if (!el) return;
+        const isSelected = el.dataset.stopId === String(selectedStopMarkerId);
+        el.style.display = isSelected ? 'block' : 'none';
+    });
+
+    // Vehicle markers: show only those whose tripId is in the filter set
+    for (const [key, marker] of Object.entries(vehicleMarkers)) {
+        const el = marker.getElement();
+        if (!el) continue;
+        const meta = vehicleMarkerMeta[key]?.meta;
+        const tripId = meta?.tripId ?? null;
+        el.style.display = (_stopTripFilter.has(String(tripId))) ? 'block' : 'none';
+    }
+}
+
+function _clearStopMarkerFilter() {
+    _stopTripFilter = null;
+
+    // Restore stop markers according to current zoom
+    const showStops = mapa.getZoom() > 14;
+    allStopMarkers.forEach(m => {
+        const el = m.getElement();
+        if (el) el.style.display = showStops ? 'block' : 'none';
+    });
+
+    // Restore all vehicle markers
+    for (const marker of Object.values(vehicleMarkers)) {
+        const el = marker.getElement();
+        if (el) el.style.display = 'block';
     }
 }
 
@@ -2023,6 +2276,19 @@ function _pushVehicleUrl(vehicleId) {
     window.history.pushState({ vehicleId }, '', target);
 }
 
+function _buildStopSlug(meta) {
+    const codePart = meta.code || meta.id;
+    return encodeURIComponent(`${meta.name}_${codePart}`);
+}
+
+function _pushStopUrl(meta) {
+    const base = `/${window.CITY_NAME}/`;
+    const slug = _buildStopSlug(meta);
+    const target = `/${window.CITY_NAME}/stops/${slug}/`;
+    if (window.location.pathname === target) return;
+    window.history.pushState({ stopId: meta.id }, '', target);
+}
+
 // ════════════════════════════════════════
 //  VEHICLE TOOLTIP
 // ════════════════════════════════════════
@@ -2093,8 +2359,259 @@ if (!vehicleTooltipTickTimer) {
     vehicleTooltipTickTimer = setInterval(_updateVehicleTooltip, 1000);
 }
 
+// ════════════════════════════════════════
+//  STOP VIEW (PANEL PRZYSTANKU)
+// ════════════════════════════════════════
+
+function _setStopTabsActive(mode) {
+    document.querySelectorAll('.stop-tab').forEach(btn => {
+        const isActive = btn.getAttribute('data-mode') === mode;
+        btn.classList.toggle('stop-tab-active', isActive);
+    });
+}
+
+function _updateStopHeader(meta) {
+    const titleEl = document.getElementById('sp-stop-title');
+    const badgeIcons = document.getElementById('sp-stop-icons');
+    if (titleEl) {
+        const codePart = meta.code || meta.id;
+        titleEl.textContent = `${meta.name} (${codePart})`;
+    }
+    if (badgeIcons) {
+        badgeIcons.innerHTML = buildStopBadgeIcons(meta.routeTypes || []);
+    }
+}
+
+function _clearStopDepartures() {
+    const list = document.getElementById('sp-departures-list');
+    if (list) list.innerHTML = '';
+}
+
+function openStopView(meta) {
+    if (!meta) return;
+
+    // Zamknij ewentualny widok pojazdu
+    closeVehicleView();
+
+    currentStop = meta;
+    const panel = document.getElementById('stop-panel');
+    if (panel) panel.classList.remove('vehicle-panel-hidden');
+
+    _setStopTabsActive('nearest');
+    _updateStopHeader(meta);
+
+    const msg = document.getElementById('sp-message');
+    if (msg) {
+        msg.textContent = 'Ładowanie odjazdów...';
+        msg.style.display = 'block';
+    }
+    _clearStopDepartures();
+
+    if (stopDeparturesRefreshTimer) {
+        clearInterval(stopDeparturesRefreshTimer);
+        stopDeparturesRefreshTimer = null;
+    }
+
+    loadStopDepartures(meta);
+    _pushStopUrl(meta);
+}
+
+function closeStopView(pushUrl = true) {
+    currentStop = null;
+
+    const panel = document.getElementById('stop-panel');
+    if (panel) panel.classList.add('vehicle-panel-hidden');
+
+    const msg = document.getElementById('sp-message');
+    if (msg) {
+        msg.textContent = 'Wybierz przystanek na mapie, aby zobaczyć odjazdy.';
+        msg.style.display = 'block';
+    }
+    _clearStopDepartures();
+    _clearStopMarkerFilter();
+
+    if (stopDeparturesRefreshTimer) {
+        clearInterval(stopDeparturesRefreshTimer);
+        stopDeparturesRefreshTimer = null;
+    }
+
+    if (pushUrl) {
+        const base = `/${window.CITY_NAME}/`;
+        if (window.location.pathname !== base) {
+            window.history.pushState({ stopId: null }, '', base);
+        }
+    }
+}
+
+function _formatTimeHHMM(timeStr) {
+    if (!timeStr) return '--:--';
+    return String(timeStr).slice(0, 5);
+}
+
+function loadStopDepartures(meta) {
+    if (!meta || !meta.id) return;
+    const msg = document.getElementById('sp-message');
+    const list = document.getElementById('sp-departures-list');
+    if (msg) {
+        msg.textContent = 'Ładowanie odjazdów...';
+        msg.style.display = 'block';
+    }
+    if (list) list.innerHTML = '';
+
+    const url = `/api/getScheduleForStop.json?city=${window.CITY_NAME}&stop_id=${encodeURIComponent(meta.id)}`;
+
+    fetch(url)
+        .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+        .then(data => {
+            const schedule = Array.isArray(data.schedule) ? data.schedule : [];
+            const today = _todayDate();
+            const upcoming = schedule.filter(s =>
+                s.status !== 'passed' &&
+                (s.date == null || s.date >= today)
+            );
+
+            upcoming.sort((a, b) => {
+                const ta = _combineDateTimeToDate(a.date || today, a.real_departure || a.departure_time || a.arrival_time);
+                const tb = _combineDateTimeToDate(b.date || today, b.real_departure || b.departure_time || b.arrival_time);
+                if (!ta && !tb) return 0;
+                if (!ta) return 1;
+                if (!tb) return -1;
+                return ta - tb;
+            });
+
+            // Collect unique trip_ids for vehicle marker filtering
+            const tripIds = [...new Set(upcoming.map(s => s.trip_id).filter(Boolean))];
+            _applyStopMarkerFilter(tripIds, meta.id);
+
+            renderStopDepartures(upcoming.slice(0, 30));
+        })
+        .catch(() => {
+            if (msg) {
+                msg.textContent = 'Nie udało się załadować odjazdów dla tego przystanku.';
+                msg.style.display = 'block';
+            }
+        });
+}
+
+function renderStopDepartures(rows) {
+    const msg = document.getElementById('sp-message');
+    const list = document.getElementById('sp-departures-list');
+    if (!list) return;
+
+    if (!rows || rows.length === 0) {
+        list.innerHTML = '';
+        if (msg) {
+            msg.textContent = 'Brak nadchodzących odjazdów dla tego przystanku.';
+            msg.style.display = 'block';
+        }
+        return;
+    }
+
+    const today = _todayDate();
+    const now = new Date();
+
+    const pieces = rows.map(item => {
+        const line = item.route_short_name || item.route_id || '?';
+        const headsign = item.headsign || '';
+
+        // Resolve route details from cache for color and icon
+        const feedName  = item.feed_name || (window.GTFS_FEEDS?.[0]?.name ?? '');
+        const routeId   = item.route_id || '';
+        const cached    = routeDetailsCache[`${feedName}:${routeId}`] || null;
+        const routeType = cached?.route_type ?? item.route_type ?? 3;
+        const routeCfg  = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
+        const badgeBg   = cached?.color ? `#${cached.color}` : routeCfg.color;
+        const iconUrl   = window.STATIC_URL + 'img/' + routeCfg.icon;
+
+        const dateStr = item.date || today;
+        const timeStr = item.real_departure || item.departure_time || item.arrival_time;
+
+        let etaLabel = '';
+        if (dateStr === today) {
+            const dt = _combineDateTimeToDate(dateStr, timeStr);
+            if (dt && dt > now) {
+                etaLabel = _formatEtaLabel(dt) || '';
+            }
+        }
+
+        const hasRealtimePosition = (item.rt_source && item.rt_source !== 'static')
+            && item.position_type !== 'estimated';
+
+        const mapping = _statusMapping(
+            item.delay_seconds,
+            item.status,
+            item.rt_source || 'static',
+            hasRealtimePosition
+        );
+
+        return `
+        <div class="stop-departure-row">
+            <div class="stop-departure-line-badge" style="background:${badgeBg};">
+                <img class="stop-departure-line-icon" src="${iconUrl}" alt="">
+                <div class="stop-departure-line-name">${line}</div>
+            </div>
+            <div class="stop-departure-meta">
+                <div class="stop-departure-headsign">${headsign}</div>
+                <div class="stop-departure-status-row">
+                    <img class="vehicle-stop-status-icon"
+                         src="${window.STATIC_URL}img/${mapping.icon}" alt="status">
+                    <span class="stop-departure-status ${mapping.className || ''}">${mapping.label}</span>
+                </div>
+            </div>
+            <div class="stop-departure-time-col">
+                <div class="stop-departure-time-main">${_formatTimeHHMM(timeStr)}</div>
+                <div class="stop-departure-eta">${etaLabel}</div>
+            </div>
+        </div>`;
+    });
+
+    list.innerHTML = pieces.join('');
+    if (msg) msg.style.display = 'none';
+}
+
+function openStopViewFromId(stopId) {
+    const meta = STOP_META_BY_ID[String(stopId)];
+    if (!meta) return;
+    openStopView(meta);
+}
+
+function openStopViewFromUrl() {
+    const path = window.location.pathname || '';
+    const idx = path.indexOf('/stops/');
+    if (idx === -1) return;
+    let slug = path.slice(idx + '/stops/'.length);
+    slug = slug.replace(/\/$/, '');
+    if (!slug) return;
+    slug = decodeURIComponent(slug);
+
+    // Dopasuj po wygenerowanym slugu, żeby nie polegać wyłącznie na ID
+    for (const meta of Object.values(STOP_META_BY_ID)) {
+        if (_buildStopSlug(meta) === encodeURIComponent(slug)) {
+            openStopView(meta);
+            return;
+        }
+    }
+
+    // Fallback: spróbuj znaleźć po nazwie i kodzie
+    const underscoreIdx = slug.lastIndexOf('_');
+    if (underscoreIdx === -1) return;
+    const namePart = slug.slice(0, underscoreIdx);
+    const codePart = slug.slice(underscoreIdx + 1);
+
+    for (const meta of Object.values(STOP_META_BY_ID)) {
+        if (meta.name === namePart && String(meta.code || meta.id) === codePart) {
+            openStopView(meta);
+            return;
+        }
+    }
+}
+
 function openVehicleView(meta) {
     if (!meta) return;
+    // Gdy otwieramy widok pojazdu, zamknij ewentualny widok przystanku
+    if (typeof closeStopView === 'function') {
+        closeStopView(false);
+    }
     currentVehicle = meta;
     followVehicleEnabled = true;
     updateGpsButtonState();
@@ -2231,16 +2748,65 @@ document.getElementById('vc-more-btn').addEventListener('click', () => {});
 
 // ── Browser history ───────────────────────────────────────────────────────────
 window.addEventListener('popstate', (event) => {
-    let vehicleId = event.state?.vehicleId ?? null;
-    if (!vehicleId && window.location.pathname.includes('/vehicle/')) {
-        const after = window.location.pathname.split('/vehicle/')[1] || '';
+    const path = window.location.pathname || '';
+    const state = event.state || {};
+
+    // Priorytet: widok przystanku
+    let stopId = state.stopId ?? null;
+    if (path.includes('/stops/')) {
+        // Gdy adres zawiera /stops/, odtwórz widok przystanku z URL
+        openStopViewFromUrl();
+        return;
+    } else if (stopId) {
+        openStopViewFromId(stopId);
+        return;
+    }
+
+    // Następnie widok pojazdu
+    let vehicleId = state.vehicleId ?? null;
+    if (!vehicleId && path.includes('/vehicle/')) {
+        const after = path.split('/vehicle/')[1] || '';
         vehicleId = decodeURIComponent(after.replace(/\/$/, ''));
     }
     if (vehicleId) {
         openVehicleViewFromUrl(vehicleId);
     } else {
         closeVehicleView();
+        closeStopView(false);
     }
+});
+
+// ── Stop panel buttons ───────────────────────────────────────────────────────
+document.getElementById('sp-close-btn').addEventListener('click', () => {
+    closeStopView();
+});
+
+document.getElementById('sp-fav-btn').addEventListener('click', () => {
+    // Placeholder – logika ulubionych do zaimplementowania później
+});
+
+document.getElementById('sp-clock-btn').addEventListener('click', () => {
+    // Placeholder – historia / zaawansowane widoki w przyszłości
+});
+
+document.querySelectorAll('.stop-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const mode = btn.getAttribute('data-mode');
+        _setStopTabsActive(mode);
+        const msg = document.getElementById('sp-message');
+        const list = document.getElementById('sp-departures-list');
+        if (mode === 'nearest') {
+            if (currentStop) {
+                loadStopDepartures(currentStop);
+            }
+        } else {
+            if (list) list.innerHTML = '';
+            if (msg) {
+                msg.textContent = 'Ten widok będzie dostępny w przyszłości.';
+                msg.style.display = 'block';
+            }
+        }
+    });
 });
 </script>
 
