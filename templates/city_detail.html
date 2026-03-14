@@ -1704,6 +1704,26 @@ function closeAbout()    { _hide('about-overlay'); openMenu(); }
 //  VEHICLE COURSE VIEW
 // ════════════════════════════════════════
 
+/**
+ * Normalizuje czas GTFS do zakresu 00–23.
+ * "26:30:00" → "02:30:00",  "17:05:00" → "17:05:00"
+ * Zachowuje sekundy gdy obecne; zwraca null dla niepoprawnego wejścia.
+ */
+function _normalizeGtfsTime(timeStr) {
+    if (!timeStr) return null;
+    const parts = String(timeStr).split(':');
+    if (parts.length < 2) return null;
+    const h  = parseInt(parts[0], 10);
+    const m  = parseInt(parts[1], 10) || 0;
+    const s  = parts.length > 2 ? (parseInt(parts[2], 10) || 0) : null;
+    if (Number.isNaN(h) || Number.isNaN(m)) return null;
+    const nh = h % 24;
+    const hh = String(nh).padStart(2, '0');
+    const mm = String(m).padStart(2, '0');
+    if (s !== null) return `${hh}:${mm}:${String(s).padStart(2, '0')}`;
+    return `${hh}:${mm}`;
+}
+
 function _gtfsTimeToDate(timeStr) {
     if (!timeStr) return null;
     const parts = String(timeStr).split(':');
@@ -2175,8 +2195,12 @@ function _renderVehicleTimeline() {
         const isFutureLike = !isPassed;
 
         // ── Time column builder ────────────────────────────────────────────────
-        // fmtTime: returns slice of time string, empty string for falsy input
-        const fmtTime = (t) => t ? (showSec ? String(t).slice(0, 8) : String(t).slice(0, 5)) : '';
+        // fmtTime: normalizes GTFS time (h≥24 → modulo 24), then slices to HH:MM or HH:MM:SS
+        const fmtTime = (t) => {
+            const n = _normalizeGtfsTime(t);
+            if (!n) return '';
+            return showSec ? n.slice(0, 8) : n.slice(0, 5);
+        };
 
         /**
          * Builds 1-2 <div> rows for a single time field (arrival OR departure).
@@ -2553,7 +2577,9 @@ function closeStopView(pushUrl = true) {
 
 function _formatTimeHHMM(timeStr) {
     if (!timeStr) return null;
-    return String(timeStr).slice(0, 5);
+    const n = _normalizeGtfsTime(timeStr);
+    if (!n) return null;
+    return n.slice(0, 5);
 }
 
 function loadStopDepartures(meta) {
