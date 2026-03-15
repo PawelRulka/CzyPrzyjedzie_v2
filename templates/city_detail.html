@@ -198,6 +198,12 @@
             background-color: rgba(255,255,255,0.9);
             flex-shrink: 0;
         }
+        /* Kontener ikon przystanku – wrapper na wiele ikon, bez własnego tła */
+        #sp-stop-icons {
+            background-color: transparent;
+            display: flex;
+            gap: 3px;
+        }
         .vehicle-badge-line {
             font-family: 'Roboto', sans-serif;
             font-weight: 700;
@@ -284,7 +290,7 @@
         }
         .stop-departure-row {
             display: grid;
-            grid-template-columns: auto 1fr auto;
+            grid-template-columns: 1fr auto;
             column-gap: 10px;
             align-items: center;
             padding: 6px 0;
@@ -299,48 +305,71 @@
         .stop-departure-row--clickable:hover {
             background: rgba(255,255,255,0.06);
         }
+        .stop-departure-top-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: nowrap;
+            min-width: 0;
+        }
         .stop-departure-line-badge {
             display: inline-flex;
-            flex-direction: column;
+            flex-direction: row;
             align-items: center;
-            justify-content: center;
-            min-width: 52px;
-            padding: 5px 8px;
-            border-radius: 10px;
+            flex-shrink: 0;
+            padding: 4px 8px;
+            border-radius: 8px;
             background: #2C95D0;
-            gap: 3px;
+            gap: 5px;
         }
         .stop-departure-line-icon {
-            width: 16px;
-            height: 16px;
+            width: 15px;
+            height: 15px;
             flex-shrink: 0;
+            background-color: rgba(255,255,255,0.9);
         }
         .stop-departure-line-name {
             font-family: 'Roboto', sans-serif;
             font-weight: 700;
-            font-size: 16px;
+            font-size: 14px;
             color: #FFFFFF;
+            white-space: nowrap;
         }
         .stop-departure-headsign {
             font-family: 'Roboto', sans-serif;
             font-size: 15px;
             font-weight: 500;
             color: #E7E8E8;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 0;
         }
         .stop-departure-meta {
             display: flex;
             flex-direction: column;
-            gap: 2px;
+            gap: 3px;
+            min-width: 0;
         }
         .stop-departure-status-row {
             display: flex;
             align-items: center;
             gap: 4px;
+            flex-wrap: nowrap;
         }
         .stop-departure-status {
             font-family: 'Roboto', sans-serif;
             font-size: 13px;
             font-weight: 500;
+        }
+        .stop-departure-platform {
+            font-family: 'Roboto', sans-serif;
+            font-size: 13px;
+            font-weight: 400;
+            color: #FFFFFF;
+            opacity: 0.6;
+            white-space: nowrap;
+            margin-left: 4px;
         }
         .stop-departure-time-col {
             display: flex;
@@ -429,6 +458,10 @@
             font-weight: 500;
             color: #FF9500;
         }
+
+        /* ── Odjazdy rosnące – kursy które już odjechały ── */
+        .stop-ascending-row--past { opacity: 0.38; }
+        .stop-ascending-time--past { color: #858687; }
 
         /* ── Compact time size (when showSeconds OR arr+dep both shown with delay) ── */
         .vehicle-stop-times--compact .vehicle-stop-time,
@@ -1189,23 +1222,38 @@ let _zoomTimeout;
 
 function createStopMarkerHTML(routeTypes) {
     const uniqueTypes = [...new Set(routeTypes)];
-    const hasTrain    = uniqueTypes.includes(2);
-    const size        = hasTrain ? 26 : 18;
-    const radius      = hasTrain ? 5  : 4;
+    const hasTrain = uniqueTypes.includes(2);
 
-    const iconsHTML = uniqueTypes.map(type => {
+    // Rozmiar każdej ikonki
+    const iconSizes = uniqueTypes.map(type => (type === 2 ? 22 : 15));
+    const iconCount = iconSizes.length;
+
+    // Wysokość znacznika: rozmiar największej ikonki + padding pionowy
+    const padding  = 6;   // px z każdej strony (góra+dół)
+    const gap      = 2;   // px między ikonkami (jak w gap:2px)
+    const maxIcon  = iconCount > 0 ? Math.max(...iconSizes) : 15;
+    const height   = maxIcon + padding;
+
+    // Szerokość: suma wszystkich ikon + odstępy między nimi + padding poziomy
+    const totalIconsW = iconSizes.reduce((s, v) => s + v, 0) + gap * (iconCount - 1);
+    const width  = totalIconsW + padding;
+
+    const radius = hasTrain ? 5 : 4;
+
+    const iconsHTML = uniqueTypes.map((type, i) => {
         const cfg = ROUTE_TYPE_CONFIG[type];
         if (!cfg) return '';
-        const h   = type === 2 ? 18 : 15;
+        const h   = iconSizes[i];
         const url = window.STATIC_URL + 'img/' + cfg.icon;
-        return `<div class="stop-icon" style="height:${h}px;width:${h}px;
+        return `<div class="stop-icon" style="height:${h}px;width:${h}px;flex-shrink:0;
             -webkit-mask:url('${url}') no-repeat center/contain;
             mask:url('${url}') no-repeat center/contain;"></div>`;
     }).join('');
 
-    return `<div class="stop-marker" style="width:${size}px;height:${size}px;
-        border-radius:${radius}px;background-color:#2C95D0;">
-        <div class="stop-icons-container">${iconsHTML}</div>
+    return `<div class="stop-marker" style="width:${width}px;height:${height}px;
+        border-radius:${radius}px;background-color:#2C95D0;
+        display:flex;align-items:center;justify-content:center;">
+        <div class="stop-icons-container" style="display:flex;align-items:center;justify-content:center;gap:${gap}px;">${iconsHTML}</div>
     </div>`;
 }
 
@@ -1313,14 +1361,59 @@ async function _fetchRouteDetails(routeId, feedName) {
     return routeDetailsCache[key] ?? null;
 }
 
-function buildVehicleMarkerHTML(routeShortName, blockId, vehicleId, routeType, colorHex, bearing, settings, isEstimated) {
+/**
+ * Formatuje delay_seconds do wyświetlenia w znaczniku pojazdu.
+ * Zwraca string lub null gdy nie ma co pokazać.
+ *
+ * Bez sekund:  floor(|delay| / 60), próg ±59 s → 0
+ * Z sekundami: MM:SS (np. "1:30")
+ * Znak: domyślnie opóźnienie = "+", przed czasem = "-";
+ *       przy invertedPunctuality odwrotnie.
+ */
+function _formatMarkerDelay(delaySec, settings) {
+    if (delaySec == null) return null;
+
+    const inv      = settings.invertedPunctuality;
+    const showSecs = settings.showSeconds;
+
+    if (!showSecs) {
+        // Zaokrąglamy w dół do pełnych minut (floor(|x|/60))
+        const sign    = delaySec >= 0 ? 1 : -1;
+        const absSec  = Math.abs(delaySec);
+        const absMins = Math.floor(absSec / 60);  // 0–59 s → 0
+        const value   = sign * absMins;
+
+        if (value === 0) return '0';
+        if (value > 0)   return inv ? `+${value}` : `-${value}`;
+        return inv ? `${value}` : `+${Math.abs(value)}`;
+    }
+
+    // Z sekundami: MM:SS
+    const sign   = delaySec >= 0 ? 1 : -1;
+    const absSec = Math.abs(delaySec);
+    const mins   = Math.floor(absSec / 60);
+    const secs   = absSec % 60;
+    const formatted = mins > 0
+        ? `${mins}:${String(secs).padStart(2, '0')}`
+        : `${secs}s`;
+
+    if (sign > 0) return inv ? `+${formatted}` : `-${formatted}`;
+    return inv ? `-${formatted}` : `+${formatted}`;
+}
+
+function buildVehicleMarkerHTML(routeShortName, tripShortName, blockId, vehicleId, routeType, colorHex, bearing, settings, isEstimated, delaySeconds) {
     const cfg     = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
     const bg      = colorHex ? `#${colorHex}` : cfg.color;
     const iconUrl = window.STATIC_URL + 'img/' + cfg.icon;
 
     const parts = [routeShortName || '?'];
-    if (settings.showBrigade && blockId && blockId !== 'N/A')   parts.push(blockId);
-    if (settings.showVehicle && vehicleId) parts.push(vehicleId);
+    if (tripShortName)                                             parts.push(tripShortName);
+    if (settings.showBrigade && blockId && blockId !== 'N/A')     parts.push(blockId);
+    if (settings.showVehicle && vehicleId)                        parts.push(vehicleId);
+    if (settings.showDelay) {
+        const delayStr = _formatMarkerDelay(delaySeconds, settings);
+        if (delayStr != null) parts.push(delayStr);
+    }
     const label = parts.join('/');
 
     const arrowHTML = bearing != null ? `
@@ -1460,13 +1553,17 @@ async function refreshVehicles() {
         const key = `${v.feed_name}:${v.vehicle_id ?? v.trip_id ?? Math.random()}`;
         activeKeys.add(key);
 
-        let routeShortName = null, blockId = null, routeType = 3, colorHex = null, resolvedRouteId = null;
+        let routeShortName = null, tripShortName = null, blockId = null,
+            routeType = 3, colorHex = null, resolvedRouteId = null,
+            delaySeconds = null;
 
         if (v.trip_id) {
             const trip = tripDetailsCache[`${v.feed_name}:${v.trip_id}`] ?? null;
             if (trip) {
                 resolvedRouteId = trip.route_id || v.route_id;
-                blockId        = trip.block_id || null;
+                blockId         = trip.block_id       || null;
+                tripShortName   = trip.trip_short_name || null;
+                delaySeconds    = trip.delay_seconds   ?? null;
                 if (resolvedRouteId) {
                     const route = await _fetchRouteDetails(resolvedRouteId, v.feed_name);
                     if (route) {
@@ -1496,9 +1593,9 @@ async function refreshVehicles() {
         }
 
         const { html, bg } = buildVehicleMarkerHTML(
-            routeShortName, blockId, v.display_vehicle_id,
+            routeShortName, tripShortName, blockId, v.display_vehicle_id,
             routeType, colorHex, effectiveBearing, s,
-            v.positionType === 'estimated'
+            v.positionType === 'estimated', delaySeconds
         );
         const dotHtml  = buildVehicleDotHTML(bg);
         const fullMode = mapa.getZoom() > 14;
@@ -2599,20 +2696,29 @@ function loadStopDepartures(meta) {
         .then(data => {
             const schedule = Array.isArray(data.schedule) ? data.schedule : [];
             const today = _todayDate();
-            const upcoming = schedule.filter(s =>
-                s.status !== 'passed' &&
-                (s.date == null || s.date >= today)
-            );
+            const now   = new Date();
+
+            // Budujemy rzeczywisty Date dla każdego odjazdu uwzględniając:
+            //  • godziny GTFS ≥ 24 (np. 26:00 przy dacie 20260315 = 02:00 dnia 20260316)
+            //  • brak pola date (fallback na today)
+            function _departureDate(s) {
+                const timeStr = s.real_departure || s.departure_time
+                              || s.real_arrival  || s.arrival_time;
+                return _combineDateTimeToDate(s.date || today, timeStr);
+            }
+
+            const upcoming = schedule.filter(s => {
+                if (s.status === 'passed') return false;
+                const dt = _departureDate(s);
+                // Jeżeli nie możemy wyznaczyć czasu – pokazujemy (bezpieczny fallback)
+                if (!dt) return true;
+                // Odjazdy z przyszłości zawsze OK; odjazdy z przeszłości – ukrywamy
+                return dt >= now;
+            });
 
             upcoming.sort((a, b) => {
-                const ta = _combineDateTimeToDate(
-                    a.date || today,
-                    a.real_departure || a.departure_time || a.real_arrival || a.arrival_time
-                );
-                const tb = _combineDateTimeToDate(
-                    b.date || today,
-                    b.real_departure || b.departure_time || b.real_arrival || b.arrival_time
-                );
+                const ta = _departureDate(a);
+                const tb = _departureDate(b);
                 if (!ta && !tb) return 0;
                 if (!ta) return 1;
                 if (!tb) return -1;
@@ -2658,8 +2764,31 @@ function renderStopDepartures(rows) {
     const now   = new Date();
 
     const pieces = rows.map(item => {
-        const line     = item.route_short_name || item.route_id || '?';
-        const headsign = item.headsign || '';
+        const s = loadSettings();
+
+        const line        = item.route_short_name || item.route_id || '?';
+        const headsign    = item.headsign || '';
+        const tripShort   = item.trip_short_name || null;
+        const blockId     = (item.block_id && item.block_id !== 'N/A') ? item.block_id : null;
+        const vehicleLbl  = item.vehicle_label || null;
+
+        // Badge label: route_short_name / trip_short_name / block_id / vehicle_label
+        const badgeParts = [line];
+        if (tripShort)                              badgeParts.push(tripShort);
+        if (s.showBrigade && blockId)               badgeParts.push(blockId);
+        if (s.showVehicle && vehicleLbl)            badgeParts.push(vehicleLbl);
+        const badgeLabel = badgeParts.join('/');
+
+        // Platform / track
+        const platform = item.platform ?? null;
+        const track    = item.track    ?? null;
+        let platformText = '';
+        if (platform !== null || track !== null) {
+            const parts = [];
+            if (platform !== null) parts.push(`Peron ${platform}`);
+            if (track    !== null) parts.push(`Tor ${track}`);
+            platformText = parts.join(' · ');
+        }
 
         const feedName  = item.feed_name || (window.GTFS_FEEDS?.[0]?.name ?? '');
         const routeId   = item.route_id || '';
@@ -2723,16 +2852,19 @@ function renderStopDepartures(rows) {
              data-feed-name="${feedName}"
              data-date="${dateStr}"
              data-has-vehicle="${markerKey ? '1' : '0'}">
-            <div class="stop-departure-line-badge" style="background:${badgeBg};">
-                <img class="stop-departure-line-icon" src="${iconUrl}" alt="">
-                <div class="stop-departure-line-name">${line}</div>
-            </div>
             <div class="stop-departure-meta">
-                <div class="stop-departure-headsign">${headsign}</div>
+                <div class="stop-departure-top-row">
+                    <div class="stop-departure-line-badge" style="background:${badgeBg};">
+                        <div class="stop-departure-line-icon" style="-webkit-mask:url('${iconUrl}') no-repeat center/contain; mask:url('${iconUrl}') no-repeat center/contain;"></div>
+                        <span class="stop-departure-line-name">${badgeLabel}</span>
+                    </div>
+                    <div class="stop-departure-headsign">${headsign}</div>
+                </div>
                 <div class="stop-departure-status-row">
                     <img class="vehicle-stop-status-icon"
                          src="${window.STATIC_URL}img/${mapping.icon}" alt="status">
                     <span class="stop-departure-status ${mapping.className || ''}">${mapping.label}</span>
+                    ${platformText ? `<span class="stop-departure-platform">${platformText}</span>` : ''}
                 </div>
             </div>
             <div class="stop-departure-time-col">
@@ -3138,13 +3270,13 @@ document.querySelectorAll('.stop-tab').forEach(btn => {
     btn.addEventListener('click', () => {
         const mode = btn.getAttribute('data-mode');
         _setStopTabsActive(mode);
-        const msg = document.getElementById('sp-message');
-        const list = document.getElementById('sp-departures-list');
         if (mode === 'nearest') {
-            if (currentStop) {
-                loadStopDepartures(currentStop);
-            }
+            if (currentStop) loadStopDepartures(currentStop);
+        } else if (mode === 'ascending') {
+            if (currentStop) loadAscendingDepartures(currentStop);
         } else {
+            const msg  = document.getElementById('sp-message');
+            const list = document.getElementById('sp-departures-list');
             if (list) list.innerHTML = '';
             if (msg) {
                 msg.textContent = 'Ten widok będzie dostępny w przyszłości.';
@@ -3153,6 +3285,172 @@ document.querySelectorAll('.stop-tab').forEach(btn => {
         }
     });
 });
+
+// ════════════════════════════════════════
+//  ODJAZDY ROSNĄCE (cały dzisiejszy dzień, bez realtime)
+// ════════════════════════════════════════
+
+function loadAscendingDepartures(meta) {
+    if (!meta || !meta.id) return;
+    const msg  = document.getElementById('sp-message');
+    const list = document.getElementById('sp-departures-list');
+    if (msg)  { msg.textContent = 'Ładowanie rozkładu...'; msg.style.display = 'block'; }
+    if (list) list.innerHTML = '';
+
+    const url = `/api/getScheduleForStop.json?city=${window.CITY_NAME}&stop_id=${encodeURIComponent(meta.id)}`;
+
+    fetch(url)
+        .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+        .then(data => {
+            const today    = _todayDate();
+            const schedule = Array.isArray(data.schedule) ? data.schedule : [];
+
+            // Tylko dzisiejszy dzień; jeżeli date === null traktujemy jako dzisiaj
+            const todayRows = schedule.filter(s => (s.date || today) === today);
+
+            // Sortuj po planowym czasie odjazdu (arrival_time jako fallback)
+            todayRows.sort((a, b) => {
+                const ta = _combineDateTimeToDate(today, a.departure_time || a.arrival_time);
+                const tb = _combineDateTimeToDate(today, b.departure_time || b.arrival_time);
+                if (!ta && !tb) return 0;
+                if (!ta) return 1;
+                if (!tb) return -1;
+                return ta - tb;
+            });
+
+            renderAscendingDepartures(todayRows);
+        })
+        .catch(() => {
+            if (msg) {
+                msg.textContent = 'Nie udało się załadować rozkładu dla tego przystanku.';
+                msg.style.display = 'block';
+            }
+        });
+}
+
+function renderAscendingDepartures(rows) {
+    const msg  = document.getElementById('sp-message');
+    const list = document.getElementById('sp-departures-list');
+    if (!list) return;
+
+    if (!rows || rows.length === 0) {
+        list.innerHTML = '';
+        if (msg) {
+            msg.textContent = 'Brak odjazdów dla tego przystanku w dniu dzisiejszym.';
+            msg.style.display = 'block';
+        }
+        return;
+    }
+
+    const today = _todayDate();
+    const now   = new Date();
+
+    const pieces = rows.map(item => {
+        const s = loadSettings();
+
+        const line       = item.route_short_name || item.route_id || '?';
+        const headsign   = item.headsign || '';
+        const tripShort  = item.trip_short_name || null;
+        const blockId    = (item.block_id && item.block_id !== 'N/A') ? item.block_id : null;
+        const vehicleLbl = item.vehicle_label || null;
+
+        const badgeParts = [line];
+        if (tripShort)                  badgeParts.push(tripShort);
+        if (s.showBrigade && blockId)   badgeParts.push(blockId);
+        if (s.showVehicle && vehicleLbl) badgeParts.push(vehicleLbl);
+        const badgeLabel = badgeParts.join('/');
+
+        const platform = item.platform ?? null;
+        const track    = item.track    ?? null;
+        let platformText = '';
+        if (platform !== null || track !== null) {
+            const parts = [];
+            if (platform !== null) parts.push(`Peron ${platform}`);
+            if (track    !== null) parts.push(`Tor ${track}`);
+            platformText = parts.join(' · ');
+        }
+
+        const feedName  = item.feed_name || item.feed || (window.GTFS_FEEDS?.[0]?.name ?? '');
+        const routeId   = item.route_id || '';
+        const cached    = routeDetailsCache[`${feedName}:${routeId}`] || null;
+        const routeType = cached?.route_type ?? item.route_type ?? 3;
+        const routeCfg  = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
+        const badgeBg   = cached?.color ? `#${cached.color}` : routeCfg.color;
+        const iconUrl   = window.STATIC_URL + 'img/' + routeCfg.icon;
+
+        // Używamy wyłącznie planowych czasów
+        const arrTime = _formatTimeHHMM(item.arrival_time);
+        const depTime = _formatTimeHHMM(item.departure_time);
+
+        let stopTimeDisplay;
+        if (arrTime && depTime && arrTime !== depTime) {
+            stopTimeDisplay = `${arrTime}&nbsp;/&nbsp;${depTime}`;
+        } else {
+            stopTimeDisplay = depTime || arrTime || '--:--';
+        }
+
+        const dt     = _combineDateTimeToDate(today, item.departure_time || item.arrival_time);
+        const isPast = dt ? dt < now : false;
+
+        const dateStr   = item.date || today;
+        const markerKey = _findMarkerKeyByTripId(item.trip_id);
+
+        return `
+        <div class="stop-departure-row stop-departure-row--clickable stop-ascending-row${isPast ? ' stop-ascending-row--past' : ''}"
+             data-trip-id="${item.trip_id || ''}"
+             data-feed-name="${feedName}"
+             data-date="${dateStr}"
+             data-has-vehicle="${markerKey ? '1' : '0'}">
+            <div class="stop-departure-meta">
+                <div class="stop-departure-top-row">
+                    <div class="stop-departure-line-badge" style="background:${badgeBg};">
+                        <div class="stop-departure-line-icon" style="-webkit-mask:url('${iconUrl}') no-repeat center/contain; mask:url('${iconUrl}') no-repeat center/contain;"></div>
+                        <span class="stop-departure-line-name">${badgeLabel}</span>
+                    </div>
+                    <div class="stop-departure-headsign">${headsign}</div>
+                </div>
+                ${platformText ? `<div class="stop-departure-status-row"><span class="stop-departure-platform" style="margin-left:0;">${platformText}</span></div>` : ''}
+            </div>
+            <div class="stop-departure-time-col">
+                <div class="stop-departure-time-main${isPast ? ' stop-ascending-time--past' : ''}">${stopTimeDisplay}</div>
+            </div>
+        </div>`;
+    });
+
+    list.innerHTML = pieces.join('');
+    if (msg) msg.style.display = 'none';
+
+    // Event delegation – takie samo jak w renderStopDepartures
+    list.onclick = (e) => {
+        const row = e.target.closest('.stop-departure-row--clickable');
+        if (!row) return;
+        const tripId   = row.dataset.tripId;
+        const feedName = row.dataset.feedName;
+        const date     = row.dataset.date;
+        if (!tripId) return;
+
+        if (row.dataset.hasVehicle === '1') {
+            const key = _findMarkerKeyByTripId(tripId);
+            if (key) { openVehicleViewFromMarker(key); return; }
+        }
+
+        if (feedName && date) {
+            window.location.href =
+                `/${window.CITY_NAME}/trip/${encodeURIComponent(feedName)}/${encodeURIComponent(tripId)}/${date}/`;
+        }
+    };
+
+    // Przewiń do pierwszego kursu który jeszcze nie odjechał
+    requestAnimationFrame(() => {
+        const firstUpcoming = list.querySelector('.stop-departure-row:not(.stop-ascending-row--past)');
+        if (firstUpcoming) {
+            const panelBody = document.getElementById('sp-panel-body');
+            if (panelBody) {
+                panelBody.scrollTo({ top: firstUpcoming.offsetTop - 8, behavior: 'smooth' });
+            }
+        }
+    });
+}
 </script>
 
 </body>

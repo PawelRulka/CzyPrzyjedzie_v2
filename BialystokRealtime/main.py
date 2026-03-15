@@ -20,7 +20,7 @@ FEED_NAME = "BKM"
 CESIP_TRACES_URL = "https://przystanki.bialystok.pl/csip/ext_channel/traces.json"
 BLOCKS_API_URL = "http://127.0.0.1:8000/api/getBlocksForFeedAndDate.json"
 
-GTFS_STATIC_ZIP_URL = "http://localhost:8070/bialystok_modified.zip"
+GTFS_STATIC_ZIP_URL = "http://127.0.0.1:8050/ontimegtfs/bialystok.zip"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "gtfs_static")
