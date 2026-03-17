@@ -14,6 +14,60 @@ CzyPrzyjedzie to aplikacja która ma służyć do śledzenia pojazdów komunikac
 
 Aplikacja w celu pokazania tych danych użytkownikowi korzysta z własnego API, które konwertuje dane w formacie GTFS (format danych dla transportu publicznego - https://gtfs.org/) na pliki JSON.
 
+## 2. Wygląd aplikacji
+
+- Aplikacja jest stroną WWW z widokiem pełnoekranowej mapy oraz nakładanymi panelami UI (układ „mapa + overlay”).
+- Strona główna (wybór miasta):
+  - mapa w tle,
+  - centralna karta z nazwą aplikacji, krótkim opisem oraz listą miast jako przyciski,
+  - każda pozycja miasta może zawierać ikonę kraju oraz opis.
+- Widok miasta (mapa + dane):
+  - mapa zajmuje całe okno,
+  - na mapie wyświetlane są:
+    - przystanki jako markery,
+    - pojazdy jako markery z etykietą (np. numer boczny) oraz strzałką/kierunkiem jazdy,
+  - po kliknięciu w przystanek/pojazd użytkownik otrzymuje szczegóły (np. odjazdy, kurs, opóźnienie) w panelach/okienkach nałożonych na mapę.
+- Styl graficzny:
+  - ciemny motyw z efektem „glass” (półprzezroczyste panele, blur),
+  - nowoczesne, zaokrąglone komponenty, wyraźne cienie dla czytelności na tle mapy,
+  - ikony wektorowe (Lucide) oraz fonty web (Roboto), z fallbackiem do systemowych.
+- Mapa:
+  - silnik mapy: MapLibre GL,
+  - źródło kafelków/stylu: MapTiler (z atrybucją MapTiler + OpenStreetMap).
+
+## 3. Wymagania techniczne
+
+### Backend (serwer aplikacji)
+
+- Framework: Django (konfiguracja projektu wskazuje na Django 5.2.11).
+- Baza danych (domyślnie): SQLite (`db.sqlite3`).
+- Aplikacja serwuje:
+  - HTML (szablony Django w katalogu `templates/`),
+  - statyczne zasoby (katalog `static/`, m.in. `static/css/main.css`).
+
+### Zależności Pythona (wynikające z kodu)
+
+- `django`
+- `django-cors-headers` (middleware CORS skonfigurowany w `settings.py`)
+- `requests` (pobieranie GTFS static i/lub danych realtime z URL-i)
+- `gtfs-realtime-bindings` (moduł `google.transit.gtfs_realtime_pb2` do obsługi Protobuf GTFS-RT)
+- Dodatkowe skrypty narzędziowe w repozytorium korzystają m.in. z `aiohttp` (generator/serwer OnTimeToGTFS).
+
+### Frontend (przeglądarka)
+
+- Brak osobnego bundlera (brak `package.json`) — UI to HTML/CSS/JS w szablonach.
+- Zewnętrzne biblioteki wczytywane z CDN:
+  - MapLibre GL (`unpkg.com`),
+  - Lucide (`unpkg.com`),
+  - Google Fonts (Roboto).
+- Wymagane połączenie z internetem do pobrania stylu mapy (MapTiler) oraz bibliotek z CDN.
+
+### Dane i integracje
+
+- Aplikacja operuje na danych w formacie **GTFS Static** (zip z plikami `.txt`) oraz opcjonalnie **GTFS Realtime** (protobuf `.pb` lub JSON).
+- Backend posiada endpointy API (sekcja poniżej), które łączą dane statyczne z realtime oraz zwracają ujednolicone JSON-y dla UI.
+- Realtime może pochodzić z różnych źródeł (TripUpdates, VehiclePositions); przy braku VehiclePositions serwer potrafi estymować pozycje pojazdów na podstawie danych statycznych i TripUpdates.
+
 # Dokumentacja API
 
 Dokumentacja endpointów HTTP oraz funkcji pomocniczych modułu `api.py`. Wszystkie endpointy przyjmują wyłącznie żądania **GET** i zwracają odpowiedź w formacie **JSON**.

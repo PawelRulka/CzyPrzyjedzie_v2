@@ -1219,6 +1219,8 @@ let stopDeparturesRefreshTimer = null;
 // ════════════════════════════════════════
 let allStopMarkers = [];
 let _zoomTimeout;
+let _stopMarkersMounted = false;
+const stopMarkerEntries = [];
 
 function createStopMarkerHTML(routeTypes) {
     const uniqueTypes = [...new Set(routeTypes)];
@@ -1276,9 +1278,41 @@ function updateStopMarkersVisibility() {
         // When a vehicle course or stop filter is active, don't touch marker visibility
         if (currentVehicle || _stopTripFilter !== null) return;
         const show = mapa.getZoom() > 14;
-        allStopMarkers.forEach(m => {
-            m.getElement().style.display = show ? 'block' : 'none';
-        });
+        if (updateStopMarkersVisibility._lastShow === show) return;
+        updateStopMarkersVisibility._lastShow = show;
+
+        // MapLibre HTML markers are positioned every frame even when CSS-hidden.
+        // For many stops, removing them when not needed is significantly faster.
+        if (!show) {
+            if (_stopMarkersMounted) {
+                for (const m of allStopMarkers) m.remove();
+                allStopMarkers = [];
+                _stopMarkersMounted = false;
+            }
+            return;
+        }
+
+        if (!_stopMarkersMounted) {
+            for (const entry of stopMarkerEntries) {
+                if (!entry.marker) {
+                    const el = document.createElement('div');
+                    el.innerHTML = createStopMarkerHTML(entry.routeTypes);
+                    el.className = 'custom-marker';
+                    const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+                        .setLngLat([entry.lon, entry.lat]);
+                    marker.getElement().style.zIndex = '1';
+                    if (entry.stopId != null) {
+                        const sid = String(entry.stopId);
+                        marker.getElement().dataset.stopId = sid;
+                        marker.getElement().onclick = () => openStopViewFromId(sid);
+                    }
+                    entry.marker = marker;
+                }
+                entry.marker.addTo(mapa);
+                allStopMarkers.push(entry.marker);
+            }
+            _stopMarkersMounted = true;
+        }
     }, 50);
 }
 
@@ -1287,13 +1321,39 @@ function updateVehicleMarkersZoom() {
     clearTimeout(_vehicleZoomTimeout);
     _vehicleZoomTimeout = setTimeout(() => {
         const zoom = mapa.getZoom();
+        // Only switch all markers when we cross the threshold.
+        // Otherwise zoom events would rebuild DOM for every marker on every zoom tick.
+        const thresholdFull = zoom > 14;
+        const lastThresholdFull = updateVehicleMarkersZoom._lastThresholdFull;
+        updateVehicleMarkersZoom._lastThresholdFull = thresholdFull;
+
+        // If only current vehicle needs forcing full mode, handle it separately.
+        if (lastThresholdFull === thresholdFull) {
+            if (currentVehicleMarkerKey && vehicleMarkers[currentVehicleMarkerKey]) {
+                const meta = vehicleMarkerMeta[currentVehicleMarkerKey];
+                if (meta) {
+                    const el = vehicleMarkers[currentVehicleMarkerKey].getElement();
+                    const desired = meta.fullHtml;
+                    if (meta._lastRenderedHtml !== desired) {
+                        el.innerHTML = desired;
+                        meta._lastRenderedHtml = desired;
+                    }
+                }
+            }
+            return;
+        }
+
         for (const key of Object.keys(vehicleMarkers)) {
             const meta = vehicleMarkerMeta[key];
             if (!meta) continue;
             const el = vehicleMarkers[key].getElement();
             const forceFull = key === currentVehicleMarkerKey;
-            const fullMode = zoom > 14 || forceFull;
-            el.innerHTML = fullMode ? meta.fullHtml : meta.dotHtml;
+            const fullMode = thresholdFull || forceFull;
+            const desired = fullMode ? meta.fullHtml : meta.dotHtml;
+            if (meta._lastRenderedHtml !== desired) {
+                el.innerHTML = desired;
+                meta._lastRenderedHtml = desired;
+            }
         }
     }, 50);
 }
@@ -1517,10 +1577,14 @@ async function _fetchAllTripDetailsForFeed(feedName) {
 }
 
 async function refreshVehicles() {
-    if (!window.GTFS_FEEDS || window.GTFS_FEEDS.length === 0) return;
+    // Prevent overlapping refreshes (slow network / heavy DOM work).
+    if (refreshVehicles._inFlight) return;
+    refreshVehicles._inFlight = true;
+    try {
+        if (!window.GTFS_FEEDS || window.GTFS_FEEDS.length === 0) return;
 
-    const s = loadSettings();
-    const activeKeys = new Set();
+        const s = loadSettings();
+        const activeKeys = new Set();
 
     const feedResults = await Promise.allSettled(
         window.GTFS_FEEDS.map(async feed => {
@@ -1537,6 +1601,13 @@ async function refreshVehicles() {
     const allVehicles = feedResults.flatMap(res =>
         res.status === 'fulfilled' ? res.value : []
     );
+
+    // Performance guard: animation of many markers means N * requestAnimationFrame loops.
+    // When there are lots of vehicles, skip per-marker interpolation.
+    const skipAnimation = allVehicles.length > 160;
+    const bounds = (() => {
+        try { return mapa.getBounds(); } catch (e) { return null; }
+    })();
 
     const feedsNeedingTrips = new Set(
         allVehicles.filter(v => v.trip_id).map(v => v.feed_name)
@@ -1620,10 +1691,22 @@ async function refreshVehicles() {
         };
 
         if (vehicleMarkers[key]) {
-            vehicleMarkers[key].getElement().innerHTML = displayHtml;
+            const metaWrap = vehicleMarkerMeta[key];
+            if (!metaWrap || metaWrap._lastRenderedHtml !== displayHtml) {
+                vehicleMarkers[key].getElement().innerHTML = displayHtml;
+                if (metaWrap) metaWrap._lastRenderedHtml = displayHtml;
+            }
             const prev = vehiclePositions[key];
             if (prev) {
-                animateMarkerTo(vehicleMarkers[key], prev.lat, prev.lon, v.lat, v.lon);
+                let inView = true;
+                if (bounds && typeof bounds.contains === 'function') {
+                    try { inView = bounds.contains([v.lon, v.lat]); } catch (e) { inView = true; }
+                }
+                if (!skipAnimation && inView) {
+                    animateMarkerTo(vehicleMarkers[key], prev.lat, prev.lon, v.lat, v.lon);
+                } else {
+                    vehicleMarkers[key].setLngLat([v.lon, v.lat]);
+                }
             } else {
                 vehicleMarkers[key].setLngLat([v.lon, v.lat]);
             }
@@ -1637,6 +1720,7 @@ async function refreshVehicles() {
                 .addTo(mapa);
             marker.getElement().style.zIndex = '100';
             vehicleMarkers[key] = marker;
+            if (vehicleMarkerMeta[key]) vehicleMarkerMeta[key]._lastRenderedHtml = displayHtml;
         }
 
         vehiclePositions[key] = { lat: v.lat, lon: v.lon };
@@ -1671,8 +1755,11 @@ async function refreshVehicles() {
         }
     }
 
-    if (_stopTripFilter !== null && currentStop) {
-        _applyStopMarkerFilter([..._stopTripFilter], currentStop.id);
+        if (_stopTripFilter !== null && currentStop) {
+            _applyStopMarkerFilter([..._stopTripFilter], currentStop.id);
+        }
+    } finally {
+        refreshVehicles._inFlight = false;
     }
 }
 
@@ -1713,18 +1800,16 @@ mapa.on('load', () => {
                     })
                 )];
 
-                const el = document.createElement('div');
-                el.innerHTML = createStopMarkerHTML(routeTypes);
-                el.className = 'custom-marker';
-                const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
-                    .setLngLat([stop.lon, stop.lat])
-                    .addTo(mapa);
-                marker.getElement().style.zIndex = '1';
-                allStopMarkers.push(marker);
+                stopMarkerEntries.push({
+                    stopId: stop.stop_id != null ? String(stop.stop_id) : null,
+                    lat: stop.lat,
+                    lon: stop.lon,
+                    routeTypes,
+                    marker: null,
+                });
 
                 if (stop.stop_id != null) {
                     const sid = String(stop.stop_id);
-                    marker.getElement().dataset.stopId = sid;
                     STOP_META_BY_ID[sid] = {
                         id: sid,
                         name: stop.stop_name || `Przystanek ${sid}`,
@@ -1732,9 +1817,6 @@ mapa.on('load', () => {
                         routeTypes,
                         lat: stop.lat,
                         lon: stop.lon,
-                    };
-                    marker.getElement().onclick = () => {
-                        openStopViewFromId(sid);
                     };
                 }
             });
@@ -2105,11 +2187,8 @@ function _applyStopMarkerFilter(tripIds, selectedStopMarkerId) {
 function _clearStopMarkerFilter() {
     _stopTripFilter = null;
 
-    const showStops = mapa.getZoom() > 14;
-    allStopMarkers.forEach(m => {
-        const el = m.getElement();
-        if (el) el.style.display = showStops ? 'block' : 'none';
-    });
+    // Restore default stop marker behavior (incl. mount/unmount by zoom level).
+    updateStopMarkersVisibility();
 
     for (const marker of Object.values(vehicleMarkers)) {
         const el = marker.getElement();
