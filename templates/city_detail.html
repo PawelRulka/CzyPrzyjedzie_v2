@@ -13,6 +13,11 @@
     <script>
         window.STATIC_URL = "{% get_static_prefix %}";
         window.CITY_NAME = "{{ city.name }}";
+        window.INITIAL_VIEW = "{{ initial_view|default:'map'|escapejs }}";
+        window.INITIAL_ROUTE = {
+            feed_name: "{{ initial_route_feed_name|default:''|escapejs }}",
+            route_id:  "{{ initial_route_id|default:''|escapejs }}"
+        };
         window.INITIAL_SELECTED_VEHICLE_ID = "{{ selected_vehicle_id|default_if_none:''|escapejs }}";
         window.GTFS_FEEDS = [{% for feed in city.feeds.all %}{% if feed.is_active %}{"name":"{{ feed.name|escapejs }}"}{% if not forloop.last %},{% endif %}{% endif %}{% endfor %}];
         window.INITIAL_TRIP_FEED = "{{ selected_feed_name|default:''|escapejs }}";
@@ -243,6 +248,11 @@
             width: 18px;
             height: 18px;
         }
+        .vehicle-btn svg {
+            width: 18px;
+            height: 18px;
+            color: rgba(255,255,255,0.92);
+        }
         .vehicle-btn[disabled] {
             opacity: 0.4;
             cursor: default;
@@ -254,6 +264,100 @@
             padding: 12px 14px;
             overflow-y: auto;
             transition: max-height 0.3s ease;
+        }
+
+        /* ── Route detail mode (line overview) ── */
+        .vehicle-course-panel--route .vehicle-stop-times,
+        .vehicle-course-panel--route .vehicle-stop-eta {
+            display: none !important;
+        }
+        .vehicle-course-panel--route #vc-gps-btn {
+            display: none;
+        }
+        .vehicle-course-panel--route #vc-calendar-btn {
+            display: flex !important;
+        }
+        .vehicle-course-panel--route .vehicle-timeline::before {
+            content: '';
+            position: absolute;
+            left: 8px; /* center of 20px dot column (10px) minus half line width (2px) */
+            top: 13px;
+            bottom: 13px;
+            width: 4px;
+            background: var(--route-line-color, #43842B);
+            border-radius: 2px;
+            z-index: 0;
+            display: block;
+        }
+        .vehicle-course-panel--route .vehicle-stop {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 0;
+        }
+        .vehicle-course-panel--route .vehicle-stop-line {
+            padding-top: 0;
+            width: 20px;
+            justify-content: center;
+        }
+        .vehicle-course-panel--route .vehicle-stop-info {
+            padding-top: 0;
+        }
+        .vehicle-course-panel--route .vehicle-stop-name {
+            line-height: 1.25;
+            word-break: break-word;
+        }
+
+        /* ── Routes list (overlay on map) ── */
+        .routes-panel {
+            background: rgba(40, 45, 50, 0.95);
+            border-radius: 14px;
+            padding: 14px 14px 12px 14px;
+            margin: 4px 0 14px 0;
+            max-height: 56vh;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+        }
+        .routes-panel::-webkit-scrollbar { width: 6px; }
+        .routes-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 6px; }
+        .routes-panel::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+        .routes-sections { display: flex; flex-direction: column; gap: 16px; }
+        .routes-section-title {
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.55);
+            margin: 0 2px;
+        }
+        .routes-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+        }
+        .route-pill {
+            border: none;
+            cursor: pointer;
+            border-radius: 10px;
+            padding: 8px 12px;
+            font-family: 'Roboto', sans-serif;
+            font-weight: 800;
+            font-size: 14px;
+            line-height: 1;
+            box-shadow: 0 8px 18px rgba(0,0,0,0.45);
+            transition: transform 0.12s ease, filter 0.12s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .route-pill:hover { transform: translateY(-1px); filter: brightness(1.04); }
+        .route-pill:active { transform: translateY(0px); filter: brightness(0.98); }
+        .route-pill-icon {
+            width: 16px;
+            height: 16px;
+            background: rgba(255,255,255,0.9);
+            flex-shrink: 0;
         }
         .vehicle-no-data {
             font-family: 'Roboto', sans-serif;
@@ -730,6 +834,9 @@
                 <button id="vc-more-btn" class="vehicle-btn" type="button">
                     <img src="{% static 'img/dots.png' %}" alt="Więcej">
                 </button>
+                <button id="vc-calendar-btn" class="vehicle-btn" type="button" style="display:none;">
+                    <i data-lucide="calendar"></i>
+                </button>
                 <button id="vc-close-btn" class="vehicle-btn" type="button">
                     <img src="{% static 'img/close.png' %}" alt="Zamknij">
                 </button>
@@ -820,7 +927,9 @@
 <div id="schedules-overlay" class="overlay-hidden">
     <div class="selection-card">
         <p class="choose-text"><b>Rozkłady</b></p>
-        <div class="menu-buttons"><!-- tu będą linie --></div>
+        <div class="routes-panel">
+            <div id="routes-sections" class="routes-sections"></div>
+        </div>
         <div class="city-button" onclick="closeSchedules()">
             <span class="menu-icon"><i data-lucide="arrow-left"></i></span>
             <div class="city-content"><div class="city-name-line">Powrót</div></div>
@@ -1201,6 +1310,21 @@ let vehicleTripRefreshTimer = null;
 let vehicleTooltipTickTimer = null;
 let _pendingInitialScroll = false;  // autoscroll to current stop only on first open
 
+let _routeViewActive = false;
+let _currentRouteDetails = null;
+let _currentRouteDirection = '0';
+
+let _vehicleMarkersMode = 'normal'; // 'normal' | 'trip' | 'route'
+let _routeVehicleFilter = null;     // { feedName: string, routeId: string } | null
+
+function _applyVehicleMarkersMode(mode, routeFilter = null) {
+    _vehicleMarkersMode = mode;
+    _routeVehicleFilter = routeFilter;
+}
+
+let _mapUserMovedSinceAutoFit = false;
+let _autoFitKey = null;
+
 let currentTripStopMarkers = [];
 const TRIP_SHAPE_SOURCE_ID = 'current-trip-shape';
 const TRIP_SHAPE_LAYER_ID = 'current-trip-shape-line';
@@ -1369,6 +1493,126 @@ const tripDetailsCache  = {};
 const routeDetailsCache = {};
 const routeFeedFetched  = new Set();
 
+function _routeTypeName(routeType) {
+    const cfg = ROUTE_TYPE_CONFIG[routeType];
+    return cfg?.name || 'Inne';
+}
+
+function _routeTypeOrder(routeType) {
+    // Prefer showing common types first; keep unknowns last
+    const preferred = [3, 0, 2, 1, 800, 5, 7];
+    const idx = preferred.indexOf(routeType);
+    return idx === -1 ? 999 : idx;
+}
+
+function _safeHexColor(raw) {
+    if (!raw) return null;
+    const v = String(raw).trim().replace(/^#/, '');
+    if (!/^[0-9a-fA-F]{6}$/.test(v)) return null;
+    return v.toUpperCase();
+}
+
+async function buildRoutesListUI() {
+    const container = document.getElementById('routes-sections');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const feeds = Array.isArray(window.GTFS_FEEDS) ? window.GTFS_FEEDS : [];
+    if (feeds.length === 0) {
+        container.innerHTML = `<div class="vehicle-no-data">Brak feedów dla tego miasta.</div>`;
+        return;
+    }
+
+    const results = await Promise.allSettled(
+        feeds.map(f => fetch(
+            `/api/getRouteDetails.json?city=${encodeURIComponent(window.CITY_NAME)}` +
+            `&feed_name=${encodeURIComponent(f.name)}`
+        ).then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+    );
+
+    const allRoutes = [];
+    results.forEach((res, idx) => {
+        if (res.status !== 'fulfilled') return;
+        const feedName = feeds[idx]?.name;
+        const routes = Array.isArray(res.value?.routes) ? res.value.routes : [];
+        routes.forEach(r => {
+            allRoutes.push({
+                feed: feedName,
+                route_id: r.route_id,
+                route_short_name: r.route_short_name,
+                route_type: (r.route_type != null) ? Number(r.route_type) : 3,
+                color: _safeHexColor(r.color || r.route_color),
+                text_color: _safeHexColor(r.text_color || r.route_text_color),
+            });
+        });
+    });
+
+    if (allRoutes.length === 0) {
+        container.innerHTML = `<div class="vehicle-no-data">Brak danych o liniach.</div>`;
+        return;
+    }
+
+    const byType = new Map();
+    for (const r of allRoutes) {
+        const t = Number.isFinite(r.route_type) ? r.route_type : 3;
+        if (!byType.has(t)) byType.set(t, []);
+        byType.get(t).push(r);
+    }
+
+    const typesSorted = [...byType.keys()].sort((a, b) => _routeTypeOrder(a) - _routeTypeOrder(b));
+
+    for (const type of typesSorted) {
+        const section = document.createElement('div');
+        const title = document.createElement('div');
+        title.className = 'routes-section-title';
+        title.textContent = _routeTypeName(type);
+        section.appendChild(title);
+
+        const grid = document.createElement('div');
+        grid.className = 'routes-grid';
+
+        const routesSorted = byType.get(type).slice().sort((a, b) => {
+            const aa = (a.route_short_name || '').toString();
+            const bb = (b.route_short_name || '').toString();
+            return aa.localeCompare(bb, 'pl', { numeric: true, sensitivity: 'base' });
+        });
+
+        for (const route of routesSorted) {
+            const btn = document.createElement('button');
+            btn.className = 'route-pill';
+
+            const cfg = ROUTE_TYPE_CONFIG[type] || ROUTE_TYPE_CONFIG[3];
+            const bg = route.color ? `#${route.color}` : cfg.color;
+            const fg = route.text_color ? `#${route.text_color}` : '#FFFFFF';
+            btn.style.background = bg;
+            btn.style.color = fg;
+
+            const iconUrl = window.STATIC_URL + 'img/' + (cfg.icon || 'bus.png');
+            const iconEl = document.createElement('div');
+            iconEl.className = 'route-pill-icon';
+            iconEl.style.webkitMask = `url('${iconUrl}') no-repeat center/contain`;
+            iconEl.style.mask = `url('${iconUrl}') no-repeat center/contain`;
+            btn.appendChild(iconEl);
+
+            const labelEl = document.createElement('span');
+            labelEl.textContent = route.route_short_name || route.route_id || '—';
+            btn.appendChild(labelEl);
+
+            btn.onclick = () => {
+                if (!route.feed || !route.route_id) return;
+                window.location.href =
+                    `/${window.CITY_NAME}/routes/${encodeURIComponent(route.feed)}/${encodeURIComponent(route.route_id)}/`;
+            };
+            grid.appendChild(btn);
+        }
+
+        section.appendChild(grid);
+        container.appendChild(section);
+    }
+
+    lucide.createIcons();
+}
+
 function buildVehicleDotHTML(bg) {
     return `<div class="vm-dot" style="background:${bg};"></div>`;
 }
@@ -1466,15 +1710,20 @@ function buildVehicleMarkerHTML(routeShortName, tripShortName, blockId, vehicleI
     const bg      = colorHex ? `#${colorHex}` : cfg.color;
     const iconUrl = window.STATIC_URL + 'img/' + cfg.icon;
 
-    const parts = [routeShortName || '?'];
-    if (tripShortName)                                             parts.push(tripShortName);
-    if (settings.showBrigade && blockId && blockId !== 'N/A')     parts.push(blockId);
-    if (settings.showVehicle && vehicleId)                        parts.push(vehicleId);
+    const line = routeShortName || '?';
+    const restParts = [];
+    if (settings.showBrigade && blockId && blockId !== 'N/A') restParts.push(blockId);
+    if (settings.showVehicle && vehicleId)                    restParts.push(vehicleId);
     if (settings.showDelay) {
         const delayStr = _formatMarkerDelay(delaySeconds, settings);
-        if (delayStr != null) parts.push(delayStr);
+        if (delayStr != null) restParts.push(delayStr);
     }
-    const label = parts.join('/');
+
+    // Label format:
+    // - when trip_short_name exists: "LINE TRIP/BRIGADE/VEH/DELAY"
+    // - otherwise:                  "LINE/BRIGADE/VEH/DELAY"
+    const base  = tripShortName ? `${line} ${tripShortName}` : line;
+    const label = restParts.length ? `${base}/${restParts.join('/')}` : base;
 
     const arrowHTML = bearing != null ? `
         <div class="vm-arrow-wrap">
@@ -1602,6 +1851,12 @@ async function refreshVehicles() {
         res.status === 'fulfilled' ? res.value : []
     );
 
+    // In trip view: don't show any vehicle markers (only trip-stop markers).
+    // We still run the refresh so stale markers are cleaned up.
+    if (_vehicleMarkersMode === 'trip') {
+        // activeKeys stays empty -> cleanup below removes everything.
+    }
+
     // Performance guard: animation of many markers means N * requestAnimationFrame loops.
     // When there are lots of vehicles, skip per-marker interpolation.
     const skipAnimation = allVehicles.length > 160;
@@ -1622,7 +1877,11 @@ async function refreshVehicles() {
 
     for (const v of allVehicles) {
         const key = `${v.feed_name}:${v.vehicle_id ?? v.trip_id ?? Math.random()}`;
-        activeKeys.add(key);
+        // Route view: render only vehicles assigned to the current route.
+        // Trip view: render none.
+        if (_vehicleMarkersMode === 'trip') {
+            continue;
+        }
 
         let routeShortName = null, tripShortName = null, blockId = null,
             routeType = 3, colorHex = null, resolvedRouteId = null,
@@ -1658,6 +1917,17 @@ async function refreshVehicles() {
             }
         }
 
+        const effectiveRouteId = resolvedRouteId ?? v.route_id ?? null;
+        if (_vehicleMarkersMode === 'route' && _routeVehicleFilter) {
+            if (String(v.feed_name) !== String(_routeVehicleFilter.feedName) ||
+                String(effectiveRouteId || '') !== String(_routeVehicleFilter.routeId)) {
+                // Not part of current line -> exclude from activeKeys so it gets removed.
+                continue;
+            }
+        }
+
+        activeKeys.add(key);
+
         const effectiveBearing = v.bearing != null ? v.bearing : (vehicleBearings[key] ?? null);
         if (v.bearing != null) {
             vehicleBearings[key] = v.bearing;
@@ -1677,7 +1947,7 @@ async function refreshVehicles() {
             vehicleId: v.vehicle_id ?? null,
             displayVehicleId: v.display_vehicle_id ?? null,
             tripId: v.trip_id ?? null,
-            routeId: resolvedRouteId ?? v.route_id ?? null,
+            routeId: effectiveRouteId,
             routeShortName,
             routeColor: colorHex,
             routeType,
@@ -1767,6 +2037,13 @@ async function refreshVehicles() {
 //  MAP LOAD
 // ════════════════════════════════════════
 mapa.on('load', () => {
+    // ── Initial page mode ─────────────────────────────────────────────────────
+    if (window.INITIAL_VIEW === 'routes_list') {
+        document.getElementById('schedules-overlay')?.classList.remove('overlay-hidden');
+        document.getElementById('schedules-overlay')?.classList.add('overlay-visible');
+        buildRoutesListUI();
+    }
+
     fetch(`/api/getStopsForCity.json?name=${window.CITY_NAME}`)
         .then(r => r.json())
         .then(async data => {
@@ -1826,6 +2103,14 @@ mapa.on('load', () => {
             if (window.location.pathname.includes('/stops/')) {
                 openStopViewFromUrl();
             }
+
+            if (window.INITIAL_VIEW === 'route_detail') {
+                const feedName = (window.INITIAL_ROUTE?.feed_name || '').trim();
+                const routeId  = (window.INITIAL_ROUTE?.route_id  || '').trim();
+                if (feedName && routeId) {
+                    setTimeout(() => openRouteViewDirect(feedName, routeId), 150);
+                }
+            }
         })
         .catch(e => console.error('Błąd ładowania przystanków:', e));
 
@@ -1847,11 +2132,13 @@ mapa.on('load', () => {
 mapa.on('zoom', updateStopMarkersVisibility);
 mapa.on('zoom', updateVehicleMarkersZoom);
 mapa.on('dragstart', () => {
+    _mapUserMovedSinceAutoFit = true;
     if (followVehicleEnabled) {
         followVehicleEnabled = false;
         updateGpsButtonState();
     }
 });
+mapa.on('zoomstart', () => { _mapUserMovedSinceAutoFit = true; });
 mapa.on('zoom', _updateTripStopLabelsVisibility);
 mapa.on('move', _updateVehicleTooltip);
 mapa.on('zoom', _updateVehicleTooltip);
@@ -1870,8 +2157,15 @@ function _hide(id) {
 function openMenu()      { _show('menu-overlay'); }
 function closeMenu()     { _hide('menu-overlay'); }
 
-function openSchedules() { closeMenu(); _show('schedules-overlay'); }
-function closeSchedules(){ _hide('schedules-overlay'); openMenu(); }
+function openSchedules() {
+    closeMenu();
+    _show('schedules-overlay');
+    buildRoutesListUI();
+}
+function closeSchedules(){
+    _hide('schedules-overlay');
+    openMenu();
+}
 
 function openSettings()  { applySettingsToUI(); closeMenu(); _show('settings-overlay'); }
 function closeSettings() { _hide('settings-overlay'); openMenu(); }
@@ -2096,6 +2390,50 @@ function _renderTripShape(shapePoints, lineColor) {
     }
 }
 
+function _fitMapToShape(shapePoints, key = null) {
+    if (_mapUserMovedSinceAutoFit) return false;
+    if (key && _autoFitKey === key) return false;
+
+    if (!Array.isArray(shapePoints) || shapePoints.length < 2) return false;
+
+    const sorted = [...shapePoints].sort((a, b) =>
+        Number(a.shape_pt_sequence || 0) - Number(b.shape_pt_sequence || 0)
+    );
+    const coords = sorted
+        .map(p => {
+            const lat = parseFloat(p.shape_pt_lat);
+            const lon = parseFloat(p.shape_pt_lon);
+            if (Number.isNaN(lat) || Number.isNaN(lon)) return null;
+            return [lon, lat];
+        })
+        .filter(Boolean);
+
+    if (coords.length < 2) return false;
+
+    let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+    for (const [lon, lat] of coords) {
+        if (lon < minLon) minLon = lon;
+        if (lon > maxLon) maxLon = lon;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+    }
+    if (![minLon, minLat, maxLon, maxLat].every(Number.isFinite)) return false;
+    if (minLon === maxLon || minLat === maxLat) return false;
+
+    try {
+        const bounds = new maplibregl.LngLatBounds([minLon, minLat], [maxLon, maxLat]);
+        mapa.fitBounds(bounds, {
+            padding: { top: 110, bottom: 260, left: 40, right: 40 },
+            duration: 700,
+            maxZoom: 16,
+        });
+        if (key) _autoFitKey = key;
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
 function _renderTripStops(tripStops, lineColor) {
     currentTripStopMarkers.forEach(m => m.remove());
     currentTripStopMarkers = [];
@@ -2277,6 +2615,36 @@ function _renderVehicleTimeline() {
             noData.textContent = 'Brak danych o kursie dla wybranego pojazdu.';
             noData.style.display = 'block';
         }
+        return;
+    }
+
+    // ── Route detail mode: render only stop list (no realtime/status/times) ───
+    const panelEl = document.getElementById('vehicle-course-panel');
+    const routeMode = !!(panelEl && panelEl.classList.contains('vehicle-course-panel--route'));
+    if (routeMode) {
+        const stopTimes = currentVehicleTrip.realtime.stop_times || [];
+        const routeCfg  = ROUTE_TYPE_CONFIG[currentVehicle?.routeType || 3] || ROUTE_TYPE_CONFIG[3];
+        const lineColor = currentVehicle?.routeColor ? `#${currentVehicle.routeColor}` : routeCfg.color;
+        container.style.setProperty('--route-line-color', lineColor);
+        const pieces = [];
+        stopTimes.forEach((st) => {
+            const sid = String(st.stop_id);
+            const name = STOP_NAME_BY_ID[sid] || `Przystanek ${sid}`;
+            const stopCode = STOP_CODE_BY_ID[sid] || null;
+            const fullName = stopCode ? `${name} (${stopCode})` : `${name} (${sid})`;
+            pieces.push(`
+                <div class="vehicle-stop">
+                    <div class="vehicle-stop-line">
+                        <div class="vehicle-stop-dot"></div>
+                    </div>
+                    <div class="vehicle-stop-info">
+                        <div class="vehicle-stop-name">${fullName}</div>
+                    </div>
+                </div>
+            `);
+        });
+        container.innerHTML = pieces.join('');
+        if (noData) noData.style.display = 'none';
         return;
     }
 
@@ -2507,8 +2875,10 @@ function _updateVehicleHeader() {
         badgeIcon.style.mask       = `url('${iconUrl}') no-repeat center/contain`;
     }
     if (lineEl) {
-        lineEl.textContent = currentVehicle?.routeShortName || currentVehicle?.routeId
-                             || currentVehicleTrip?.route_id || '?';
+        const line = currentVehicle?.routeShortName || currentVehicle?.routeId
+                     || currentVehicleTrip?.route_id || '?';
+        const tripShort = currentVehicleTrip?.trip_short_name || null;
+        lineEl.textContent = tripShort ? `${line} ${tripShort}` : line;
     }
     if (headsignEl) {
         headsignEl.textContent = currentVehicle?.headsign
@@ -2851,12 +3221,14 @@ function renderStopDepartures(rows) {
         const blockId     = (item.block_id && item.block_id !== 'N/A') ? item.block_id : null;
         const vehicleLbl  = item.vehicle_label || null;
 
-        // Badge label: route_short_name / trip_short_name / block_id / vehicle_label
-        const badgeParts = [line];
-        if (tripShort)                              badgeParts.push(tripShort);
-        if (s.showBrigade && blockId)               badgeParts.push(blockId);
-        if (s.showVehicle && vehicleLbl)            badgeParts.push(vehicleLbl);
-        const badgeLabel = badgeParts.join('/');
+        // Badge label:
+        // - when trip_short_name exists: "LINE TRIP/BRIGADE/VEH"
+        // - otherwise:                  "LINE/BRIGADE/VEH"
+        const restParts = [];
+        if (s.showBrigade && blockId)    restParts.push(blockId);
+        if (s.showVehicle && vehicleLbl) restParts.push(vehicleLbl);
+        const base = tripShort ? `${line} ${tripShort}` : line;
+        const badgeLabel = restParts.length ? `${base}/${restParts.join('/')}` : base;
 
         // Platform / track
         const platform = item.platform ?? null;
@@ -3019,6 +3391,10 @@ function openVehicleView(meta) {
     }
     currentVehicle = meta;
     followVehicleEnabled = true;
+    _routeViewActive     = false;
+    _currentRouteDetails = null;
+    _setVehicleCoursePanelRouteMode(false);
+    _applyVehicleMarkersMode('normal', null);
     updateGpsButtonState();
 
     _setBaseMarkersVisible(false);
@@ -3045,6 +3421,9 @@ function closeVehicleView() {
     currentVehicleMarkerKey = null;
     followVehicleEnabled    = false;
     _pendingInitialScroll   = false;
+    _routeViewActive        = false;
+    _currentRouteDetails    = null;
+    _applyVehicleMarkersMode('normal', null);
 
     const tooltip = document.getElementById('vehicle-tooltip');
     if (tooltip) tooltip.classList.add('vehicle-tooltip-hidden');
@@ -3055,6 +3434,7 @@ function closeVehicleView() {
     if (panel)    panel.classList.add('vehicle-panel-hidden');
     if (timeline) timeline.innerHTML = '';
     if (noData)   { noData.textContent = 'Wybierz pojazd na mapie, aby zobaczyć szczegóły kursu.'; noData.style.display = 'block'; }
+    _setVehicleCoursePanelRouteMode(false);
 
     _setPanelBodyH(PANEL_BODY_MIN_H, false);
 
@@ -3154,23 +3534,31 @@ function _buildStaticStopTimes(stops) {
     });
 }
 
-async function openTripViewDirect(feedName, tripId, date) {
+async function openTripViewDirect(feedName, tripId, date, { refresh = false } = {}) {
     closeStopView(false);
 
-    currentVehicle          = null;
-    currentVehicleTrip      = null;
-    currentVehicleMarkerKey = null;
-    followVehicleEnabled    = false;
-    _pendingInitialScroll   = true;
+    if (!refresh) {
+        currentVehicle          = null;
+        currentVehicleTrip      = null;
+        currentVehicleMarkerKey = null;
+        followVehicleEnabled    = false;
+        _pendingInitialScroll   = true;
+        _routeViewActive        = false;
+        _currentRouteDetails    = null;
+        _setVehicleCoursePanelRouteMode(false);
+        _applyVehicleMarkersMode('trip', null);
+        _mapUserMovedSinceAutoFit = false;
+        _autoFitKey = null;
+    }
 
     _setBaseMarkersVisible(false);
 
     const panel    = document.getElementById('vehicle-course-panel');
     const noData   = document.getElementById('vc-no-data');
     const timeline = document.getElementById('vc-timeline');
-    if (panel)    panel.classList.remove('vehicle-panel-hidden');
-    if (noData)   { noData.textContent = 'Ładowanie danych kursu...'; noData.style.display = 'block'; }
-    if (timeline) timeline.innerHTML = '';
+    if (panel) panel.classList.remove('vehicle-panel-hidden');
+    if (noData && !refresh) { noData.textContent = 'Ładowanie danych kursu...'; noData.style.display = 'block'; }
+    if (timeline && !refresh) timeline.innerHTML = '';
 
     _setPanelBodyH(PANEL_BODY_MIN_H, true);
 
@@ -3256,11 +3644,12 @@ async function openTripViewDirect(feedName, tripId, date) {
         const lineColor = currentVehicle.routeColor ? `#${currentVehicle.routeColor}` : routeCfg.color;
         _renderTripShape(data.shape  || [], lineColor);
         _renderTripStops(data.stops  || [], lineColor);
+        _fitMapToShape(data.shape || [], `trip:${feedName}:${tripId}:${date}`);
 
         if (!vehicleTripRefreshTimer) {
             vehicleTripRefreshTimer = setInterval(async () => {
                 if (!currentVehicle || currentVehicle.vehicleId !== null) return;
-                await openTripViewDirect(feedName, tripId, date);
+                await openTripViewDirect(feedName, tripId, date, { refresh: true });
             }, 10_000);
         }
 
@@ -3274,9 +3663,146 @@ async function openTripViewDirect(feedName, tripId, date) {
     }
 }
 
+function _setVehicleCoursePanelRouteMode(enabled) {
+    const panel = document.getElementById('vehicle-course-panel');
+    if (!panel) return;
+    panel.classList.toggle('vehicle-course-panel--route', !!enabled);
+
+    const moreImg = panel.querySelector('#vc-more-btn img');
+    if (moreImg) {
+        if (enabled) {
+            moreImg.src = `${window.STATIC_URL}img/change.png`;
+            moreImg.alt = 'Zmień kierunek';
+        } else {
+            moreImg.src = `${window.STATIC_URL}img/dots.png`;
+            moreImg.alt = 'Więcej';
+        }
+    }
+
+    lucide.createIcons();
+}
+
+function _buildRouteStopTimes(stopTimes) {
+    if (!Array.isArray(stopTimes)) return [];
+    return stopTimes
+        .filter(st => st && st.stop_id != null)
+        .map(st => ({
+            stop_id: String(st.stop_id),
+            scheduled_arrival: '',
+            scheduled_departure: '',
+            real_arrival: null,
+            real_departure: null,
+            delay_seconds: null,
+            status: 'upcoming',
+            source: 'static',
+        }));
+}
+
+async function openRouteViewDirect(feedName, routeId) {
+    closeStopView(false);
+
+    currentVehicle          = null;
+    currentVehicleTrip      = null;
+    currentVehicleMarkerKey = null;
+    followVehicleEnabled    = false;
+    _pendingInitialScroll   = true;
+    _routeViewActive        = true;
+    _currentRouteDetails    = null;
+    _currentRouteDirection  = '0';
+    _applyVehicleMarkersMode('route', { feedName, routeId });
+    _mapUserMovedSinceAutoFit = false;
+    _autoFitKey = null;
+
+    _setBaseMarkersVisible(false);
+
+    const panel    = document.getElementById('vehicle-course-panel');
+    const noData   = document.getElementById('vc-no-data');
+    const timeline = document.getElementById('vc-timeline');
+    if (panel)    panel.classList.remove('vehicle-panel-hidden');
+    if (noData)   { noData.textContent = 'Ładowanie trasy linii...'; noData.style.display = 'block'; }
+    if (timeline) timeline.innerHTML = '';
+
+    _setPanelBodyH(PANEL_BODY_MIN_H, true);
+
+    try {
+        const resp = await fetch(
+            `/api/getRouteDetails.json?city=${encodeURIComponent(window.CITY_NAME)}` +
+            `&feed_name=${encodeURIComponent(feedName)}` +
+            `&route_id=${encodeURIComponent(routeId)}`
+        );
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+        _currentRouteDetails = data;
+
+        const dir0 = data.directions?.['0'] ?? null;
+        const dir1 = data.directions?.['1'] ?? null;
+        const has0 = !!(dir0 && Array.isArray(dir0.stops) && dir0.stops.length > 0);
+        const has1 = !!(dir1 && Array.isArray(dir1.stops) && dir1.stops.length > 0);
+        _currentRouteDirection = has0 ? '0' : (has1 ? '1' : '0');
+
+        const routeType = (data.route_type != null) ? Number(data.route_type) : 3;
+        const routeCfg  = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
+        const rawColor  = data.color || data.route_color || null;
+        const normalizedColor = rawColor ? String(rawColor).replace(/^#/, '') : null;
+        const routeShortName = data.route_short_name || data.route_id || routeId;
+
+        const dirBlock = data.directions?.[_currentRouteDirection] ?? {};
+        const headsign = dirBlock?.headsign || routeShortName;
+
+        currentVehicle = {
+            feedName,
+            vehicleId:      null,
+            tripId:         null,
+            routeId:        data.route_id || routeId,
+            routeShortName,
+            routeColor:     normalizedColor,
+            routeType,
+            headsign,
+            positionType:   null,
+        };
+
+        currentVehicleTrip = {
+            trip_id:        null,
+            route_id:       data.route_id || routeId,
+            headsign,
+            estimatedDelay: null,
+            realtime: {
+                lat: null,
+                lon: null,
+                positionType: null,
+                stop_times: _buildRouteStopTimes(dirBlock?.stops || []),
+            },
+        };
+
+        _setVehicleCoursePanelRouteMode(true);
+
+        _updateVehicleHeader();
+        _renderVehicleTimeline();
+        updateGpsButtonState();
+
+        const lineColor = currentVehicle.routeColor ? `#${currentVehicle.routeColor}` : routeCfg.color;
+        _renderTripShape(dirBlock?.shape || [], lineColor);
+        _renderTripStops(dirBlock?.stops || [], lineColor);
+        _fitMapToShape(dirBlock?.shape || [], `route:${feedName}:${routeId}:${_currentRouteDirection}`);
+    } catch (e) {
+        console.error('Błąd ładowania trasy linii:', e);
+        if (noData) {
+            noData.textContent = 'Nie udało się załadować trasy linii.';
+            noData.style.display = 'block';
+        }
+        _routeViewActive = false;
+        _setVehicleCoursePanelRouteMode(false);
+        _setBaseMarkersVisible(true);
+    }
+}
+
 
 // ── Panel button listeners ────────────────────────────────────────────────────
 document.getElementById('vc-close-btn').addEventListener('click', () => {
+    if (_routeViewActive) {
+        window.location.href = `/${window.CITY_NAME}/routes/`;
+        return;
+    }
     closeVehicleView();
 });
 
@@ -3291,7 +3817,32 @@ document.getElementById('vc-gps-btn').addEventListener('click', () => {
     }
 });
 
-document.getElementById('vc-more-btn').addEventListener('click', () => {});
+document.getElementById('vc-more-btn').addEventListener('click', () => {
+    if (!_routeViewActive || !_currentRouteDetails) return;
+    const next = _currentRouteDirection === '0' ? '1' : '0';
+    const dirBlock = _currentRouteDetails.directions?.[next] ?? null;
+    if (!dirBlock || !Array.isArray(dirBlock.stops) || dirBlock.stops.length === 0) return;
+
+    _currentRouteDirection = next;
+    const routeType = currentVehicle?.routeType ?? 3;
+    const routeCfg  = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
+    const lineColor = currentVehicle?.routeColor ? `#${currentVehicle.routeColor}` : routeCfg.color;
+
+    if (currentVehicle) currentVehicle.headsign = dirBlock.headsign || currentVehicle.routeShortName;
+    if (currentVehicleTrip) {
+        currentVehicleTrip.headsign = currentVehicle.headsign;
+        if (!currentVehicleTrip.realtime) currentVehicleTrip.realtime = { lat: null, lon: null, positionType: null, stop_times: [] };
+        currentVehicleTrip.realtime.stop_times = _buildRouteStopTimes(dirBlock.stops);
+    }
+
+    _updateVehicleHeader();
+    _renderVehicleTimeline();
+    _renderTripShape(dirBlock.shape || [], lineColor);
+    _renderTripStops(dirBlock.stops || [], lineColor);
+    _fitMapToShape(dirBlock.shape || [], `route:${currentVehicle?.feedName || ''}:${currentVehicle?.routeId || ''}:${_currentRouteDirection}`);
+});
+
+document.getElementById('vc-calendar-btn').addEventListener('click', () => {});
 
 // ── Browser history ───────────────────────────────────────────────────────────
 window.addEventListener('popstate', (event) => {
@@ -3433,11 +3984,11 @@ function renderAscendingDepartures(rows) {
         const blockId    = (item.block_id && item.block_id !== 'N/A') ? item.block_id : null;
         const vehicleLbl = item.vehicle_label || null;
 
-        const badgeParts = [line];
-        if (tripShort)                  badgeParts.push(tripShort);
-        if (s.showBrigade && blockId)   badgeParts.push(blockId);
-        if (s.showVehicle && vehicleLbl) badgeParts.push(vehicleLbl);
-        const badgeLabel = badgeParts.join('/');
+        const restParts = [];
+        if (s.showBrigade && blockId)     restParts.push(blockId);
+        if (s.showVehicle && vehicleLbl)  restParts.push(vehicleLbl);
+        const base = tripShort ? `${line} ${tripShort}` : line;
+        const badgeLabel = restParts.length ? `${base}/${restParts.join('/')}` : base;
 
         const platform = item.platform ?? null;
         const track    = item.track    ?? null;
