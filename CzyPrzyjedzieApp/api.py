@@ -1262,19 +1262,83 @@ def get_route_details(request):
     stops_by_id = indexes["stops_by_id"]
     trips_for_route = [t for t in indexes["trips_by_id"].values() if t.get("route_id") == route_id]
 
-    directions = {"0": {"headsign": None, "stops": [], "shape": []},
-                  "1": {"headsign": None, "stops": [], "shape": []}}
-    for direction_id in ["0", "1"]:
-        dir_trips = [t for t in trips_for_route if str(t.get("direction_id")) == str(direction_id)]
-        if not dir_trips:
-            continue
-        directions[direction_id]["headsign"] = dir_trips[0].get("trip_headsign")
-        first_trip_id = dir_trips[0].get("trip_id")
-        dir_stops = indexes["stop_times_by_trip"].get(first_trip_id, [])
-        directions[direction_id]["stops"] = dir_stops
-        shape_id = dir_trips[0].get("shape_id")
+    # --- Helpery lokalne ---
+
+    def _effective_headsign(trip: dict) -> str | None:
+        """Zwraca headsign kursu lub nazwę ostatniego przystanku jako fallback."""
+        hs = trip.get("trip_headsign")
+        if hs:
+            return hs
+        stops = indexes["stop_times_by_trip"].get(trip.get("trip_id"), [])
+        if not stops:
+            return None
+        last = max(stops, key=lambda x: int(x.get("stop_sequence", 0)))
+        info = stops_by_id.get(str(last.get("stop_id", "")))
+        return info.get("stop_name") if info else None
+
+    def _build_direction_entry(rep_trip: dict) -> dict:
+        """Buduje wpis directions na podstawie reprezentatywnego kursu."""
+        tid = rep_trip.get("trip_id")
+        shape_id = rep_trip.get("shape_id")
+        dir_stops = indexes["stop_times_by_trip"].get(tid, [])
         raw_shape = indexes["shapes_by_id"].get(shape_id, [])
-        directions[direction_id]["shape"] = _shape_or_fallback(raw_shape, dir_stops, stops_by_id)
+        return {
+            "headsign": _effective_headsign(rep_trip),
+            "stops": dir_stops,
+            "shape": _shape_or_fallback(raw_shape, dir_stops, stops_by_id),
+        }
+
+    def _most_common_combo(trips: list) -> tuple | None:
+        """Zwraca najczęstszą parę (headsign, shape_id) z listy kursów."""
+        counts: dict[tuple, int] = {}
+        for t in trips:
+            key = (_effective_headsign(t), t.get("shape_id"))
+            counts[key] = counts.get(key, 0) + 1
+        return max(counts, key=lambda k: counts[k]) if counts else None
+
+    # --- Budowanie directions ---
+
+    directions: dict[str, dict] = {
+        "0": {"headsign": None, "stops": [], "shape": []},
+        "1": {"headsign": None, "stops": [], "shape": []},
+    }
+
+    has_direction_id = any(
+        str(t.get("direction_id", "")).strip() != ""
+        for t in trips_for_route
+    )
+
+    if has_direction_id:
+        # Przypadek 1: trips.txt zawiera direction_id
+        # Dla każdego kierunku (0/1) szukamy najczęstszej pary (headsign, shape_id)
+        for direction_id in ["0", "1"]:
+            dir_trips = [
+                t for t in trips_for_route
+                if str(t.get("direction_id", "")).strip() == direction_id
+            ]
+            if not dir_trips:
+                continue
+            best_combo = _most_common_combo(dir_trips)
+            if best_combo is None:
+                continue
+            rep_trip = next(
+                t for t in dir_trips
+                if (_effective_headsign(t), t.get("shape_id")) == best_combo
+            )
+            directions[direction_id] = _build_direction_entry(rep_trip)
+    else:
+        # Przypadek 2/3: brak direction_id – szukamy 2 najczęstszych par (headsign, shape_id)
+        counts: dict[tuple, int] = {}
+        for t in trips_for_route:
+            key = (_effective_headsign(t), t.get("shape_id"))
+            counts[key] = counts.get(key, 0) + 1
+        top_two = sorted(counts, key=lambda k: counts[k], reverse=True)[:2]
+        for slot, combo in enumerate(top_two):
+            rep_trip = next(
+                t for t in trips_for_route
+                if (_effective_headsign(t), t.get("shape_id")) == combo
+            )
+            directions[str(slot)] = _build_direction_entry(rep_trip)
 
     return JsonResponse({
         "city": city,
