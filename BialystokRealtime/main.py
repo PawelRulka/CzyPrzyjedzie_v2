@@ -20,7 +20,7 @@ FEED_NAME = "BKM"
 CESIP_TRACES_URL = "https://przystanki.bialystok.pl/csip/ext_channel/traces.json"
 BLOCKS_API_URL = "http://127.0.0.1:8000/api/getBlocksForFeedAndDate.json"
 
-GTFS_STATIC_ZIP_URL = "http://127.0.0.1:8050/ontimegtfs/bialystok.zip"
+GTFS_STATIC_ZIP_URL = "http://localhost:8070/bialystok_modified.zip"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "gtfs_static")
@@ -61,6 +61,16 @@ BLOCK_ID_MERGES = [
         "service_id": "P",
         "brigades": ["111-02", "111-03"],
         "block_id": "111-02+111-03",
+    },
+    {
+        "service_id": "P",
+        "brigades":   ["201-03", "202-02", "202-03", "202-01"],
+        "block_id":   "201-03+202-02+202-03+202-01",
+    },
+    {
+        "service_id": "P",
+        "brigades":   ["201-01", "200-01", "201-02", "200-02"],
+        "block_id":   "201-01+200-01+201-02+200-02",
     },
     {
         "service_id": "R",

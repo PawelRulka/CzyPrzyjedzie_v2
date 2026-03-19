@@ -1503,11 +1503,16 @@ def get_blocks_for_feed_and_date(request):
             block_map[block_id] = []
         route = routes_by_id.get(trip.get("route_id"))
         tid = trip.get("trip_id")
+        stop_times = indexes["stop_times_by_trip"].get(tid, [])
+        start_time = stop_times[0].get("departure_time") if stop_times else None
+        end_time   = stop_times[-1].get("arrival_time")  if stop_times else None
         block_map[block_id].append({
             "trip_id": tid,
             "route_id": trip.get("route_id"),
             "route_short_name": route.get("route_short_name") if route else None,
             "headsign": trip.get("trip_headsign"),
+            "start_time": start_time,
+            "end_time": end_time,
             "_sort_key": first_departure_by_trip.get(tid, 0),
         })
 

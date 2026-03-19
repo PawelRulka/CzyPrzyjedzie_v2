@@ -64,6 +64,41 @@ def route_detail(request, city_slug, feed_name, route_id):
     return render(request, 'city_detail.html', context)
 
 
+def route_brigades(request, city_slug, feed_name, route_id):
+    city = get_object_or_404(City, name=city_slug)
+    context = {
+        'city': city,
+        'initial_view': 'route_brigades',
+        'initial_route_feed_name': feed_name,
+        'initial_route_id': route_id,
+        'selected_vehicle_id': None,
+        'has_vehicle_view': False,
+        'selected_feed_name': '',
+        'selected_trip_id': '',
+        'selected_date': '',
+        'has_trip_view': False,
+    }
+    return render(request, 'city_detail.html', context)
+
+
+def brigade_detail(request, city_slug, feed_name, route_id, block_id):
+    city = get_object_or_404(City, name=city_slug)
+    context = {
+        'city': city,
+        'initial_view': 'brigade_detail',
+        'initial_route_feed_name': feed_name,
+        'initial_route_id': route_id,
+        'initial_block_id': block_id,
+        'selected_vehicle_id': None,
+        'has_vehicle_view': False,
+        'selected_feed_name': '',
+        'selected_trip_id': '',
+        'selected_date': '',
+        'has_trip_view': False,
+    }
+    return render(request, 'city_detail.html', context)
+
+
 def get_stops_api(request, city_slug):
     city = get_object_or_404(City, name=city_slug)
     feeds = GTFSFeed.objects.filter(city=city, is_active=True)
