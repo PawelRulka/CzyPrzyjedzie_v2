@@ -546,9 +546,20 @@ def _enrich_stops_with_track_platform(stops: list) -> list:
     Nie mutuje oryginalnych słowników ze współdzielonego indeksu.
     """
     return [
-        {**st, "track": st.get("track"), "platform": st.get("platform")}
+        {
+            **st,
+            "track": st.get("track"),
+            "platform": st.get("platform"),
+            "pickup_type": _normalize_pickup_dropoff(st.get("pickup_type")),
+            "drop_off_type": _normalize_pickup_dropoff(st.get("drop_off_type")),
+        }
         for st in stops
     ]
+
+
+def _normalize_pickup_dropoff(value) -> str:
+    v = "" if value is None else str(value).strip()
+    return v if v != "" else "0"
 
 
 def build_stop_times_with_realtime(
@@ -870,6 +881,8 @@ def get_schedule_for_stop(request):
                     "departure_time": sched_dep,
                     "track": st.get("track"),
                     "platform": st.get("platform"),
+                    "pickup_type": _normalize_pickup_dropoff(st.get("pickup_type")),
+                    "drop_off_type": _normalize_pickup_dropoff(st.get("drop_off_type")),
                     "block_id": block_id,
                     "date": dt.strftime("%Y%m%d"),
                     "status": rt_info["status"],
@@ -1284,7 +1297,7 @@ def get_route_details(request):
         raw_shape = indexes["shapes_by_id"].get(shape_id, [])
         return {
             "headsign": _effective_headsign(rep_trip),
-            "stops": dir_stops,
+            "stops": _enrich_stops_with_track_platform(dir_stops),
             "shape": _shape_or_fallback(raw_shape, dir_stops, stops_by_id),
         }
 
@@ -1442,7 +1455,7 @@ def get_theoritical_block_details(request):
                 "headsign": trip.get("trip_headsign"),
                 "start_time": trip_stop_times[0].get("departure_time"),
                 "end_time": trip_stop_times[-1].get("arrival_time"),
-                "stops": trip_stop_times,
+                "stops": _enrich_stops_with_track_platform(trip_stop_times),
             })
 
     for day in result_by_date.values():

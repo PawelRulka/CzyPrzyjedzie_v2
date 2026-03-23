@@ -400,6 +400,140 @@
         .stop-panel-body {
             margin-top: 4px;
         }
+        /* ── Stop time filter indicator ── */
+        .stop-time-filter-indicator {
+            display: none;
+            font-family: 'Roboto', sans-serif;
+            font-size: 12px;
+            color: rgba(255,255,255,0.58);
+            margin: 0 2px 6px 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .stop-time-filter-indicator strong { color: rgba(255,255,255,0.82); font-weight: 700; }
+
+        /* ── Stop time picker overlay ── */
+        #stop-time-overlay .selection-card {
+            width: min(560px, calc(100vw - 28px));
+            max-width: 560px;
+            background: rgba(22, 24, 28, 0.96);
+            border-radius: 18px;
+            box-shadow: 0 18px 45px rgba(0,0,0,0.72);
+            padding: 18px 16px 14px 16px;
+        }
+        .stop-time-title {
+            font-family: 'Roboto', sans-serif;
+            font-size: 20px;
+            font-weight: 700;
+            color: #E7E8E8;
+            text-align: left;
+            margin: 0 0 10px 0;
+        }
+        .stop-time-date-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            margin: 2px 0 16px 0;
+        }
+        .stop-time-date-btn {
+            border: none;
+            cursor: pointer;
+            width: 54px;
+            height: 32px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.06);
+            color: rgba(255,255,255,0.92);
+            font-size: 18px;
+            font-weight: 700;
+            transition: background 0.15s, transform 0.1s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .stop-time-date-btn:hover { background: rgba(255,255,255,0.10); transform: translateY(-1px); }
+        .stop-time-date-btn:active { transform: translateY(0px); background: rgba(255,255,255,0.07); }
+        .stop-time-date-label {
+            font-family: 'Roboto', sans-serif;
+            font-size: 18px;
+            font-weight: 700;
+            color: rgba(255,255,255,0.90);
+            letter-spacing: 0.2px;
+        }
+        .stop-time-picker-row {
+            display: flex;
+            align-items: stretch;
+            justify-content: center;
+            gap: 12px;
+            margin: 0 0 14px 0;
+        }
+        .stop-time-picker {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            min-width: 130px;
+        }
+        .stop-time-number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 12px;
+            border-radius: 14px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+        .stop-time-number input {
+            width: 64px;
+            border: none;
+            outline: none;
+            background: transparent;
+            color: rgba(255,255,255,0.95);
+            font-family: 'Roboto', sans-serif;
+            font-size: 34px;
+            font-weight: 700;
+            text-align: center;
+            appearance: textfield;
+        }
+        .stop-time-number input::-webkit-outer-spin-button,
+        .stop-time-number input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .stop-time-sep {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Roboto', sans-serif;
+            font-size: 34px;
+            font-weight: 700;
+            color: rgba(255,255,255,0.80);
+            padding: 0 2px;
+        }
+        .stop-time-picker-label {
+            font-family: 'Roboto', sans-serif;
+            font-size: 13px;
+            color: rgba(255,255,255,0.55);
+        }
+        .stop-time-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 6px;
+        }
+        .stop-time-action-btn {
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-family: 'Roboto', sans-serif;
+            font-size: 16px;
+            font-weight: 700;
+            padding: 8px 10px;
+            border-radius: 10px;
+            transition: background 0.15s;
+        }
+        .stop-time-action-btn--cancel { color: rgba(255,255,255,0.60); }
+        .stop-time-action-btn--ok { color: #2C95D0; }
+        .stop-time-action-btn:hover { background: rgba(255,255,255,0.06); }
         .stop-departure-row {
             display: grid;
             grid-template-columns: 1fr auto;
@@ -1231,6 +1365,7 @@
             <button class="stop-tab" data-mode="table">Rozkład tabelkowy</button>
             <button class="stop-tab" data-mode="ascending">Odjazdy rosnące</button>
         </div>
+        <div id="sp-time-filter-indicator" class="stop-time-filter-indicator"></div>
         <div class="vehicle-panel-body stop-panel-body" id="sp-panel-body">
             <div id="sp-message" class="vehicle-no-data">
                 Wybierz przystanek na mapie, aby zobaczyć odjazdy.
@@ -1269,6 +1404,37 @@
             </div>
         </div>
         <p class="subtitle">© <a href="https://www.maptiler.com/copyright/" target="_blank" style="color:inherit;">MapTiler</a> © <a href="https://www.openstreetmap.org/copyright" target="_blank" style="color:inherit;">OpenStreetMap contributors</a></p>
+    </div>
+</div>
+
+<!-- ══ STOP TIME OVERLAY ══ -->
+<div id="stop-time-overlay" class="overlay-hidden">
+    <div class="selection-card">
+        <div class="stop-time-title">Wprowadź czas</div>
+        <div class="stop-time-date-row">
+            <button class="stop-time-date-btn" id="st-prev-day-btn" type="button" aria-label="Poprzedni dzień">←</button>
+            <div class="stop-time-date-label" id="st-date-label">—</div>
+            <button class="stop-time-date-btn" id="st-next-day-btn" type="button" aria-label="Następny dzień">→</button>
+        </div>
+        <div class="stop-time-picker-row">
+            <div class="stop-time-picker">
+                <div class="stop-time-number">
+                    <input id="st-hour" type="number" inputmode="numeric" min="0" max="23" step="1" value="0" aria-label="Godzina">
+                </div>
+                <div class="stop-time-picker-label">Godzina</div>
+            </div>
+            <div class="stop-time-sep">:</div>
+            <div class="stop-time-picker">
+                <div class="stop-time-number">
+                    <input id="st-minute" type="number" inputmode="numeric" min="0" max="59" step="1" value="0" aria-label="Minuty">
+                </div>
+                <div class="stop-time-picker-label">Minuty</div>
+            </div>
+        </div>
+        <div class="stop-time-actions">
+            <button class="stop-time-action-btn stop-time-action-btn--cancel" id="st-cancel-btn" type="button">Anuluj</button>
+            <button class="stop-time-action-btn stop-time-action-btn--ok" id="st-ok-btn" type="button">OK</button>
+        </div>
     </div>
 </div>
 
@@ -1630,6 +1796,36 @@ let currentTripStopMarkers = [];
 const TRIP_SHAPE_SOURCE_ID = 'current-trip-shape', TRIP_SHAPE_LAYER_ID = 'current-trip-shape-line';
 const STOP_NAME_BY_ID = {}, STOP_CODE_BY_ID = {}, STOP_COORDS_BY_ID = {}, STOP_META_BY_ID = {};
 let currentStop = null, stopDeparturesRefreshTimer = null;
+
+// ── Stop view time filter (one-time per stop view open) ───────────────────────
+let _stopTimeFilterActive = false;
+let _stopTimeFilterDate = null; // Date instance or null
+
+function _dateStrFromDate(date) {
+    if (!(date instanceof Date)) return _todayDate();
+    return `${date.getFullYear()}${String(date.getMonth()+1).padStart(2,'0')}${String(date.getDate()).padStart(2,'0')}`;
+}
+function _getStopFilterDateTime() { return _stopTimeFilterActive && _stopTimeFilterDate ? new Date(_stopTimeFilterDate) : new Date(); }
+function _getStopFilterDateStr() { return _dateStrFromDate(_getStopFilterDateTime()); }
+function _formatStopFilterLabel(date) {
+    const ds = _dateStrFromDate(date);
+    const dayName = (typeof _getDayName === 'function') ? _getDayName(ds) : '';
+    const dateFmt = (typeof _formatDateDisplay === 'function') ? _formatDateDisplay(ds) : ds;
+    const hh = String(date.getHours()).padStart(2,'0');
+    const mm = String(date.getMinutes()).padStart(2,'0');
+    return `${dayName ? dayName.toLowerCase() + ', ' : ''}${dateFmt} ${hh}:${mm}`;
+}
+function _updateStopTimeFilterIndicator() {
+    const el = document.getElementById('sp-time-filter-indicator'); if (!el) return;
+    if (!_stopTimeFilterActive || !_stopTimeFilterDate) { el.style.display = 'none'; el.textContent = ''; return; }
+    el.style.display = 'block';
+    el.innerHTML = `Odjazdy od: <strong>${_formatStopFilterLabel(_stopTimeFilterDate)}</strong>`;
+}
+function _resetStopTimeFilter() {
+    _stopTimeFilterActive = false;
+    _stopTimeFilterDate = null;
+    _updateStopTimeFilterIndicator();
+}
 
 function _applyVehicleMarkersMode(mode, routeFilter = null) { _vehicleMarkersMode = mode; _routeVehicleFilter = routeFilter; }
 
@@ -2119,14 +2315,40 @@ function _fitMapToShape(shapePoints, key = null) {
     try { const bounds = new maplibregl.LngLatBounds([minLon,minLat],[maxLon,maxLat]); mapa.fitBounds(bounds,{padding:{top:110,bottom:260,left:40,right:40},duration:700,maxZoom:16}); if (key) _autoFitKey = key; return true; }
     catch (e) { return false; }
 }
+function _tripStopPickupDropoffIcon(stop) {
+    const p = String(stop?.pickup_type ?? '0').trim() || '0';
+    const d = String(stop?.drop_off_type ?? '0').trim() || '0';
+    if (p === '3' || d === '3') return '👋';
+    if (p === '1' && d === '1') return '⛔';
+    if (p === '0' && d === '1') return '➡️';
+    if (p === '1' && d === '0') return '⬅️';
+    return '';
+}
+function _buildPickupDropoffLookup(stops) {
+    const map = {};
+    if (!Array.isArray(stops)) return map;
+    for (const st of stops) {
+        if (!st) continue;
+        const sid = st.stop_id != null ? String(st.stop_id) : null;
+        const seq = st.stop_sequence != null ? String(st.stop_sequence) : null;
+        if (!sid || !seq) continue;
+        map[`${sid}:${seq}`] = st;
+    }
+    return map;
+}
+function _stopNameWithPickupDropoffIcon(stop, name) {
+    const icon = _tripStopPickupDropoffIcon(stop);
+    return icon ? `${icon} ${name}` : name;
+}
 function _renderTripStops(tripStops, lineColor) {
     currentTripStopMarkers.forEach(m => m.remove()); currentTripStopMarkers = [];
     if (!Array.isArray(tripStops) || tripStops.length === 0) return;
     for (const st of tripStops) {
         const sid = String(st.stop_id), coords = STOP_COORDS_BY_ID[sid]; if (!coords) continue;
         const name = STOP_NAME_BY_ID[sid] || `Przystanek ${sid}`;
+        const labelText = _stopNameWithPickupDropoffIcon(st, name);
         const wrapper = document.createElement('div'); wrapper.className = 'trip-stop-marker';
-        wrapper.innerHTML = `<div class="trip-stop-dot" style="border-color:${lineColor};"></div><div class="trip-stop-label" style="color:${lineColor};text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,-2px 0 0 #000,2px 0 0 #000,0 -2px 0 #000,0 2px 0 #000;">${name}</div>`;
+        wrapper.innerHTML = `<div class="trip-stop-dot" style="border-color:${lineColor};"></div><div class="trip-stop-label" style="color:${lineColor};text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,-2px 0 0 #000,2px 0 0 #000,0 -2px 0 #000,0 2px 0 #000;">${labelText}</div>`;
         const marker = new maplibregl.Marker({ element: wrapper, anchor: 'center' }).setLngLat([coords.lon, coords.lat]).addTo(mapa);
         currentTripStopMarkers.push(marker);
     }
@@ -2196,6 +2418,7 @@ function _renderVehicleTimeline() {
     if (!currentVehicleTrip || !currentVehicleTrip.realtime || !Array.isArray(currentVehicleTrip.realtime.stop_times)) {
         container.innerHTML = ''; if (noData) { noData.textContent = 'Brak danych o kursie dla wybranego pojazdu.'; noData.style.display = 'block'; } return;
     }
+    const pickupDropoffByStopKey = _buildPickupDropoffLookup(currentVehicleTrip.stops || []);
     const panelEl = document.getElementById('vehicle-course-panel'), routeMode = !!(panelEl && panelEl.classList.contains('vehicle-course-panel--route'));
     if (routeMode) {
         const stopTimes = currentVehicleTrip.realtime.stop_times || [], routeCfg = ROUTE_TYPE_CONFIG[currentVehicle?.routeType || 3] || ROUTE_TYPE_CONFIG[3];
@@ -2203,7 +2426,10 @@ function _renderVehicleTimeline() {
         container.style.setProperty('--route-line-color', lineColor);
         const pieces = stopTimes.map(st => {
             const sid = String(st.stop_id), name = STOP_NAME_BY_ID[sid] || `Przystanek ${sid}`, stopCode = STOP_CODE_BY_ID[sid] || null;
-            const fullName = stopCode ? `${name} (${stopCode})` : `${name} (${sid})`;
+            const fullNameRaw = stopCode ? `${name} (${stopCode})` : `${name} (${sid})`;
+            const key = st?.stop_id != null && st?.stop_sequence != null ? `${String(st.stop_id)}:${String(st.stop_sequence)}` : null;
+            const staticStop = key ? pickupDropoffByStopKey[key] : null;
+            const fullName = _stopNameWithPickupDropoffIcon(staticStop, fullNameRaw);
             return `<div class="vehicle-stop"><div class="vehicle-stop-line"><div class="vehicle-stop-dot"></div></div><div class="vehicle-stop-info"><div class="vehicle-stop-name">${fullName}</div></div></div>`;
         });
         container.innerHTML = pieces.join(''); if (noData) noData.style.display = 'none'; return;
@@ -2226,7 +2452,11 @@ function _renderVehicleTimeline() {
     });
     const fmtTime = (t) => { const n = _normalizeGtfsTime(t); if (!n) return ''; return showSec ? n.slice(0,8) : n.slice(0,5); };
     const pieces = stopTimes.map((st, idx) => {
-        const sid = String(st.stop_id), name = STOP_NAME_BY_ID[sid] || `Przystanek ${sid}`, stopCode = STOP_CODE_BY_ID[sid] || null, fullName = stopCode ? `${name} (${stopCode})` : `${name} (${sid})`;
+        const sid = String(st.stop_id), name = STOP_NAME_BY_ID[sid] || `Przystanek ${sid}`, stopCode = STOP_CODE_BY_ID[sid] || null;
+        const fullNameRaw = stopCode ? `${name} (${stopCode})` : `${name} (${sid})`;
+        const key = st?.stop_id != null && st?.stop_sequence != null ? `${String(st.stop_id)}:${String(st.stop_sequence)}` : null;
+        const staticStop = key ? pickupDropoffByStopKey[key] : null;
+        const fullName = _stopNameWithPickupDropoffIcon(staticStop, fullNameRaw);
         const schedArr = st.scheduled_arrival||'', schedDep = st.scheduled_departure||'', realArr = st.real_arrival||'', realDep = st.real_departure||'';
         const schedEtaDate = _gtfsTimeToDate(schedDep||schedArr), realEtaDate = _gtfsTimeToDate(realDep||realArr);
         const etaDate = waitingAtTerminus ? schedEtaDate : (realEtaDate||schedEtaDate);
@@ -2342,6 +2572,7 @@ function _updateStopHeader(meta) {
 function _clearStopDepartures() { const list = document.getElementById('sp-departures-list'); if (list) list.innerHTML = ''; }
 function openStopView(meta) {
     if (!meta) return; closeVehicleView(); currentStop = meta;
+    _resetStopTimeFilter();
     const panel = document.getElementById('stop-panel'); if (panel) panel.classList.remove('vehicle-panel-hidden');
     _setStopTabsActive('nearest'); _updateStopHeader(meta);
     const msg = document.getElementById('sp-message'); if (msg) { msg.textContent = 'Ładowanie odjazdów...'; msg.style.display = 'block'; }
@@ -2351,6 +2582,7 @@ function openStopView(meta) {
 }
 function closeStopView(pushUrl = true) {
     currentStop = null;
+    _resetStopTimeFilter();
     const panel = document.getElementById('stop-panel'); if (panel) panel.classList.add('vehicle-panel-hidden');
     const msg = document.getElementById('sp-message'); if (msg) { msg.textContent = 'Wybierz przystanek na mapie, aby zobaczyć odjazdy.'; msg.style.display = 'block'; }
     _clearStopDepartures(); _clearStopMarkerFilter();
@@ -2367,7 +2599,7 @@ function loadStopDepartures(meta) {
     fetch(`/api/getScheduleForStop.json?city=${window.CITY_NAME}&stop_id=${encodeURIComponent(meta.id)}`)
         .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
         .then(data => {
-            const schedule = Array.isArray(data.schedule) ? data.schedule : [], today = _todayDate(), now = new Date();
+            const schedule = Array.isArray(data.schedule) ? data.schedule : [], today = _todayDate(), now = _getStopFilterDateTime();
             function _departureDate(s) { return _combineDateTimeToDate(s.date||today, s.real_departure||s.departure_time||s.real_arrival||s.arrival_time); }
             const upcoming = schedule.filter(s => { if (s.status === 'passed') return false; const dt = _departureDate(s); if (!dt) return true; return dt >= now; });
             upcoming.sort((a,b) => { const ta = _departureDate(a), tb = _departureDate(b); if (!ta&&!tb) return 0; if (!ta) return 1; if (!tb) return -1; return ta-tb; });
@@ -2385,7 +2617,7 @@ function _findMarkerKeyByTripId(tripId) {
 function renderStopDepartures(rows) {
     const msg = document.getElementById('sp-message'), list = document.getElementById('sp-departures-list'); if (!list) return;
     if (!rows || rows.length === 0) { list.innerHTML = ''; if (msg) { msg.textContent = 'Brak nadchodzących odjazdów dla tego przystanku.'; msg.style.display = 'block'; } return; }
-    const today = _todayDate(), now = new Date();
+    const today = _todayDate(), now = _getStopFilterDateTime(), nowDateStr = _getStopFilterDateStr();
     const pieces = rows.map(item => {
         const s = loadSettings(), line = item.route_short_name||item.route_id||'?', headsign = item.headsign||'', tripShort = item.trip_short_name||null, blockId = (item.block_id&&item.block_id!=='N/A')?item.block_id:null, vehicleLbl = item.vehicle_label||null;
         const restParts = []; if (s.showBrigade&&blockId) restParts.push(blockId); if (s.showVehicle&&vehicleLbl) restParts.push(vehicleLbl);
@@ -2400,7 +2632,7 @@ function renderStopDepartures(rows) {
         const dispArr = _formatTimeHHMM(rawArr), dispDep = _formatTimeHHMM(rawDep);
         let stopTimeDisplay; if (dispArr&&dispDep&&dispArr!==dispDep) stopTimeDisplay=`${dispArr}&nbsp;/&nbsp;${dispDep}`; else stopTimeDisplay=dispArr||dispDep||'--:--';
         const etaTimeStr = item.real_departure||item.departure_time||item.real_arrival||item.arrival_time;
-        let etaLabel = ''; if (dateStr===today) { const dt = _combineDateTimeToDate(dateStr, etaTimeStr); if (dt&&dt>now) etaLabel=_formatEtaLabel(dt)||''; }
+        let etaLabel = ''; if (dateStr===nowDateStr) { const dt = _combineDateTimeToDate(dateStr, etaTimeStr); if (dt&&dt>now) etaLabel=_formatEtaLabel(dt)||''; }
         const hasRealtimePosition = hasRt&&item.position_type!=='estimated';
         const mapping = _statusMapping(item.delay_seconds, item.status, item.rt_source||'static', hasRealtimePosition);
         const markerKey = _findMarkerKeyByTripId(item.trip_id);
@@ -2607,7 +2839,70 @@ document.getElementById('vc-calendar-btn').addEventListener('click', () => {
 // ── Stop panel buttons ───────────────────────────────────────────────────────
 document.getElementById('sp-close-btn').addEventListener('click', () => { closeStopView(); });
 document.getElementById('sp-fav-btn').addEventListener('click', () => {});
-document.getElementById('sp-clock-btn').addEventListener('click', () => {});
+let _stopTimePickerDate = null;
+
+function _openStopTimeOverlay() {
+    const overlay = document.getElementById('stop-time-overlay'); if (!overlay) return;
+    const hourInput = document.getElementById('st-hour');
+    const minInput = document.getElementById('st-minute');
+    const dateLabel = document.getElementById('st-date-label');
+    const prevBtn = document.getElementById('st-prev-day-btn');
+    const nextBtn = document.getElementById('st-next-day-btn');
+    if (!hourInput || !minInput || !dateLabel || !prevBtn || !nextBtn) return;
+
+    _stopTimePickerDate = (_stopTimeFilterActive && _stopTimeFilterDate) ? new Date(_stopTimeFilterDate) : new Date();
+
+    function _updateLabel() {
+        const ds = _dateStrFromDate(_stopTimePickerDate);
+        const dayName = (typeof _getDayName === 'function') ? _getDayName(ds) : '';
+        const dateFmt = (typeof _formatDateDisplay === 'function') ? _formatDateDisplay(ds) : ds;
+        dateLabel.textContent = `${dayName ? dayName.toLowerCase() + ', ' : ''}${dateFmt}`;
+    }
+    function _clampInputs() {
+        const h = Math.max(0, Math.min(23, parseInt(hourInput.value,10) || 0));
+        const m = Math.max(0, Math.min(59, parseInt(minInput.value,10) || 0));
+        hourInput.value = String(h);
+        minInput.value = String(m).padStart(2,'0');
+    }
+
+    hourInput.value = String(_stopTimePickerDate.getHours());
+    minInput.value = String(_stopTimePickerDate.getMinutes()).padStart(2,'0');
+    _updateLabel();
+
+    prevBtn.onclick = () => { _stopTimePickerDate.setDate(_stopTimePickerDate.getDate() - 1); _updateLabel(); };
+    nextBtn.onclick = () => { _stopTimePickerDate.setDate(_stopTimePickerDate.getDate() + 1); _updateLabel(); };
+    hourInput.onblur = _clampInputs;
+    minInput.onblur = _clampInputs;
+
+    overlay.classList.replace('overlay-hidden', 'overlay-visible');
+}
+function _closeStopTimeOverlay() {
+    const overlay = document.getElementById('stop-time-overlay'); if (!overlay) return;
+    overlay.classList.replace('overlay-visible', 'overlay-hidden');
+}
+
+document.getElementById('sp-clock-btn').addEventListener('click', () => { if (currentStop) _openStopTimeOverlay(); });
+document.getElementById('st-cancel-btn')?.addEventListener('click', () => { _closeStopTimeOverlay(); });
+document.getElementById('st-ok-btn')?.addEventListener('click', () => {
+    const hourInput = document.getElementById('st-hour');
+    const minInput = document.getElementById('st-minute');
+    if (!hourInput || !minInput) { _closeStopTimeOverlay(); return; }
+    if (!(_stopTimePickerDate instanceof Date)) _stopTimePickerDate = new Date();
+
+    const h = Math.max(0, Math.min(23, parseInt(hourInput.value,10) || 0));
+    const m = Math.max(0, Math.min(59, parseInt(minInput.value,10) || 0));
+    const picked = new Date(_stopTimePickerDate);
+    picked.setHours(h, m, 0, 0);
+
+    _stopTimeFilterActive = true;
+    _stopTimeFilterDate = picked;
+    _updateStopTimeFilterIndicator();
+    _closeStopTimeOverlay();
+
+    const mode = document.querySelector('.stop-tab.stop-tab-active')?.getAttribute('data-mode') || 'nearest';
+    if (mode === 'nearest') { if (currentStop) loadStopDepartures(currentStop); }
+    else if (mode === 'ascending') { if (currentStop) loadAscendingDepartures(currentStop); }
+});
 document.querySelectorAll('.stop-tab').forEach(btn => {
     btn.addEventListener('click', () => {
         const mode = btn.getAttribute('data-mode'); _setStopTabsActive(mode);
@@ -2629,16 +2924,27 @@ function loadAscendingDepartures(meta) {
         .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
         .then(data => {
             const today = _todayDate(), schedule = Array.isArray(data.schedule) ? data.schedule : [];
-            const todayRows = schedule.filter(s => (s.date||today) === today);
-            todayRows.sort((a,b) => { const ta = _combineDateTimeToDate(today, a.departure_time||a.arrival_time), tb = _combineDateTimeToDate(today, b.departure_time||b.arrival_time); if (!ta&&!tb) return 0; if (!ta) return 1; if (!tb) return -1; return ta-tb; });
-            renderAscendingDepartures(todayRows);
+            const targetDate = _getStopFilterDateStr();
+            const rows = schedule.filter(s => (s.date||today) === targetDate);
+            rows.sort((a,b) => { const ta = _combineDateTimeToDate(targetDate, a.departure_time||a.arrival_time), tb = _combineDateTimeToDate(targetDate, b.departure_time||b.arrival_time); if (!ta&&!tb) return 0; if (!ta) return 1; if (!tb) return -1; return ta-tb; });
+            renderAscendingDepartures(rows, targetDate);
         })
         .catch(() => { if (msg) { msg.textContent = 'Nie udało się załadować rozkładu dla tego przystanku.'; msg.style.display = 'block'; } });
 }
-function renderAscendingDepartures(rows) {
+function renderAscendingDepartures(rows, dateStr = null) {
     const msg = document.getElementById('sp-message'), list = document.getElementById('sp-departures-list'); if (!list) return;
-    if (!rows || rows.length === 0) { list.innerHTML = ''; if (msg) { msg.textContent = 'Brak odjazdów dla tego przystanku w dniu dzisiejszym.'; msg.style.display = 'block'; } return; }
-    const today = _todayDate(), now = new Date();
+    const today = _todayDate();
+    const targetDate = dateStr || today;
+    if (!rows || rows.length === 0) {
+        list.innerHTML = '';
+        if (msg) {
+            const dateFmt = (typeof _formatDateDisplay === 'function') ? _formatDateDisplay(targetDate) : targetDate;
+            msg.textContent = `Brak odjazdów dla tego przystanku w dniu ${dateFmt}.`;
+            msg.style.display = 'block';
+        }
+        return;
+    }
+    const now = _getStopFilterDateTime();
     const pieces = rows.map(item => {
         const s = loadSettings(), line = item.route_short_name||item.route_id||'?', headsign = item.headsign||'', tripShort = item.trip_short_name||null, blockId = (item.block_id&&item.block_id!=='N/A')?item.block_id:null, vehicleLbl = item.vehicle_label||null;
         const restParts = []; if (s.showBrigade&&blockId) restParts.push(blockId); if (s.showVehicle&&vehicleLbl) restParts.push(vehicleLbl);
@@ -2650,9 +2956,9 @@ function renderAscendingDepartures(rows) {
         const badgeBg = cached?.color?`#${cached.color}`:routeCfg.color, iconUrl = window.STATIC_URL+'img/'+routeCfg.icon;
         const arrTime = _formatTimeHHMM(item.arrival_time), depTime = _formatTimeHHMM(item.departure_time);
         let stopTimeDisplay; if (arrTime&&depTime&&arrTime!==depTime) stopTimeDisplay=`${arrTime}&nbsp;/&nbsp;${depTime}`; else stopTimeDisplay=depTime||arrTime||'--:--';
-        const dt = _combineDateTimeToDate(today, item.departure_time||item.arrival_time), isPast = dt?dt<now:false;
-        const dateStr = item.date||today, markerKey = _findMarkerKeyByTripId(item.trip_id);
-        return `<div class="stop-departure-row stop-departure-row--clickable stop-ascending-row${isPast?' stop-ascending-row--past':''}" data-trip-id="${item.trip_id||''}" data-feed-name="${feedName}" data-date="${dateStr}" data-has-vehicle="${markerKey?'1':'0'}">
+        const dt = _combineDateTimeToDate(targetDate, item.departure_time||item.arrival_time), isPast = dt?dt<now:false;
+        const rowDateStr = item.date||targetDate, markerKey = _findMarkerKeyByTripId(item.trip_id);
+        return `<div class="stop-departure-row stop-departure-row--clickable stop-ascending-row${isPast?' stop-ascending-row--past':''}" data-trip-id="${item.trip_id||''}" data-feed-name="${feedName}" data-date="${rowDateStr}" data-has-vehicle="${markerKey?'1':'0'}">
             <div class="stop-departure-meta">
                 <div class="stop-departure-top-row"><div class="stop-departure-line-badge" style="background:${badgeBg};"><div class="stop-departure-line-icon" style="-webkit-mask:url('${iconUrl}') no-repeat center/contain;mask:url('${iconUrl}') no-repeat center/contain;"></div><span class="stop-departure-line-name">${badgeLabel}</span></div><div class="stop-departure-headsign">${headsign}</div></div>
                 ${platformText?`<div class="stop-departure-status-row"><span class="stop-departure-platform" style="margin-left:0;">${platformText}</span></div>`:''}
