@@ -1250,6 +1250,62 @@
             white-space: nowrap;
             flex-shrink: 0;
         }
+
+        /* ── Vehicle more menu ── */
+        .vehicle-more-menu {
+            position: fixed;
+            z-index: 500;
+            background: rgba(40, 44, 52, 0.97);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-radius: 14px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.55);
+            padding: 6px 0;
+            min-width: 220px;
+            max-width: 280px;
+            pointer-events: auto;
+        }
+        .vehicle-more-menu--hidden {
+            display: none;
+        }
+        .vmm-timestamp {
+            font-family: 'Roboto', sans-serif;
+            font-size: 13px;
+            color: rgba(255,255,255,0.45);
+            padding: 8px 18px 4px 18px;
+            user-select: none;
+        }
+        .vmm-items {
+            display: flex;
+            flex-direction: column;
+        }
+        .vmm-item {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 11px 18px;
+            cursor: pointer;
+            font-family: 'Roboto', sans-serif;
+            font-size: 15px;
+            color: rgba(255,255,255,0.92);
+            border: none;
+            background: transparent;
+            text-align: left;
+            transition: background 0.13s;
+            border-radius: 8px;
+            margin: 0 4px;
+            width: calc(100% - 8px);
+            box-sizing: border-box;
+        }
+        .vmm-item:hover {
+            background: rgba(255,255,255,0.08);
+        }
+        .vmm-item svg {
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0;
+            color: rgba(255,255,255,0.65);
+        }
     </style>
 </head>
 <body class="city-map-page">
@@ -1299,6 +1355,12 @@
     <div class="vt-arrow"></div>
 </div>
 
+<!-- ══ VEHICLE MORE MENU ══ -->
+<div id="vehicle-more-menu" class="vehicle-more-menu vehicle-more-menu--hidden">
+    <div id="vmm-timestamp" class="vmm-timestamp" style="display:none;"></div>
+    <div id="vmm-items" class="vmm-items"></div>
+</div>
+
 <!-- ══ VEHICLE COURSE PANEL ══ -->
 <div id="vehicle-course-panel" class="vehicle-panel vehicle-panel-hidden">
     <div class="vehicle-panel-card">
@@ -1319,7 +1381,7 @@
                     <img src="{% static 'img/dots.png' %}" alt="Więcej">
                 </button>
                 <button id="vc-calendar-btn" class="vehicle-btn" type="button" style="display:none;">
-                    <i data-lucide="calendar"></i>
+                    <img src="{% static 'img/dots.png' %}" alt="Więcej">
                 </button>
                 <button id="vc-close-btn" class="vehicle-btn" type="button">
                     <img src="{% static 'img/close.png' %}" alt="Zamknij">
@@ -1787,6 +1849,8 @@ const ROUTE_TYPE_CONFIG = {
 };
 
 let currentVehicle = null, currentVehicleTrip = null, currentVehicleMarkerKey = null;
+// YYYYMMDD of the currently opened trip view (kurs view); used for /trip/.../brigade/ redirects
+let currentTripDateStr = null;
 let followVehicleEnabled = false, vehicleTripRefreshTimer = null, vehicleTooltipTickTimer = null;
 let _pendingInitialScroll = false;
 let _routeViewActive = false, _currentRouteDetails = null, _currentRouteDirection = '0';
@@ -2190,6 +2254,18 @@ mapa.on('load', () => {
             if (window.INITIAL_VIEW === 'brigade_detail') {
                 const feedName = (window.INITIAL_ROUTE?.feed_name || '').trim(), routeId = (window.INITIAL_ROUTE?.route_id || '').trim(), blockId = (window.INITIAL_BLOCK_ID || '').trim();
                 if (feedName && routeId && blockId) setTimeout(() => openBrigadeDetailOverlay(feedName, routeId, blockId), 150);
+            }
+
+            // Auto-otwieranie overlayu brygady dla nowych URL:
+            // /<city>/vehicle/<vehicle_id>/brigade/
+            // /<city>/trip/<feed>/<trip>/<date>/brigade/
+            const path = window.location.pathname || '';
+            const tripBrigade = _matchTripBrigadePath(path);
+            if (tripBrigade) {
+                setTimeout(() => openBrigadeDetailOverlayFromTripAuto(tripBrigade.feedName, tripBrigade.tripId, tripBrigade.date), 150);
+            } else {
+                const vehicleId = _matchVehicleBrigadePath(path);
+                if (vehicleId) setTimeout(() => openBrigadeDetailOverlayFromVehicleAuto(vehicleId), 150);
             }
         })
         .catch(e => console.error('Błąd ładowania przystanków:', e));
@@ -2681,7 +2757,7 @@ function openVehicleView(meta) {
 }
 function closeVehicleView() {
     currentVehicle = null; currentVehicleTrip = null; currentVehicleMarkerKey = null; followVehicleEnabled = false; _pendingInitialScroll = false; _routeViewActive = false; _currentRouteDetails = null;
-    _applyVehicleMarkersMode('normal', null);
+    _applyVehicleMarkersMode('normal', null); _closeVmm();
     const tooltip = document.getElementById('vehicle-tooltip'); if (tooltip) tooltip.classList.add('vehicle-tooltip-hidden');
     const panel = document.getElementById('vehicle-course-panel'), noData = document.getElementById('vc-no-data'), timeline = document.getElementById('vc-timeline');
     if (panel) panel.classList.add('vehicle-panel-hidden'); if (timeline) timeline.innerHTML = '';
@@ -2723,6 +2799,7 @@ function _buildStaticStopTimes(stops) {
 }
 async function openTripViewDirect(feedName, tripId, date, { refresh = false } = {}) {
     closeStopView(false);
+    currentTripDateStr = date;
     if (!refresh) {
         currentVehicle = null; currentVehicleTrip = null; currentVehicleMarkerKey = null; followVehicleEnabled = false; _pendingInitialScroll = true;
         _routeViewActive = false; _currentRouteDetails = null; _setVehicleCoursePanelRouteMode(false); _applyVehicleMarkersMode('trip', null);
@@ -2766,7 +2843,10 @@ function _setVehicleCoursePanelRouteMode(enabled) {
     const panel = document.getElementById('vehicle-course-panel'); if (!panel) return;
     panel.classList.toggle('vehicle-course-panel--route', !!enabled);
     const moreImg = panel.querySelector('#vc-more-btn img');
-    if (moreImg) { if (enabled) { moreImg.src = `${window.STATIC_URL}img/change.png`; moreImg.alt = 'Zmień kierunek'; } else { moreImg.src = `${window.STATIC_URL}img/dots.png`; moreImg.alt = 'Więcej'; } }
+    if (moreImg) {
+        if (enabled) { moreImg.src = `${window.STATIC_URL}img/change.png`; moreImg.alt = 'Zmień kierunek'; }
+        else { moreImg.src = `${window.STATIC_URL}img/dots.png`; moreImg.alt = 'Więcej'; }
+    }
     lucide.createIcons();
 }
 function _buildRouteStopTimes(stopTimes) {
@@ -2807,6 +2887,195 @@ async function openRouteViewDirect(feedName, routeId) {
 }
 
 // ════════════════════════════════════════
+//  VEHICLE MORE MENU
+// ════════════════════════════════════════
+let _vmmTickTimer = null;
+let _vmmOpen = false;
+
+function _getVmmMode() {
+    // Tryb 1: pojazd z dokładną pozycją GPS
+    if (currentVehicle && currentVehicle.vehicleId &&
+        currentVehicleTrip?.realtime?.lat != null &&
+        currentVehicle.positionType !== 'estimated') return 'gps';
+    // Tryb 2: dane realtime z TripUpdates, ale bez pozycji
+    if (currentVehicleTrip?.realtime &&
+        Array.isArray(currentVehicleTrip.realtime.stop_times) &&
+        currentVehicleTrip.realtime.stop_times.length > 0 &&
+        currentVehicleTrip.realtime.stop_times.some(st => st.source !== 'static')) return 'rt_only';
+    // Tryb 3: tylko dane statyczne
+    return 'static';
+}
+
+function _getVmmTimestamp() {
+    if (!currentVehicleMarkerKey) return null;
+    const metaWrap = vehicleMarkerMeta[currentVehicleMarkerKey];
+    return metaWrap?.timestamp ?? null;
+}
+
+function _getVmmTripUpdateTimestamp() {
+    return currentVehicleTrip?.realtime?.timestamp ?? null;
+}
+
+function _formatVmmAge(ts) {
+    if (ts == null) return null;
+    const ageSec = Math.max(0, Math.round(Date.now() / 1000 - ts));
+    if (ageSec < 60) return `${ageSec} s temu`;
+    const ageMin = Math.floor(ageSec / 60);
+    if (ageMin < 60) return `${ageMin} min temu`;
+    return `${Math.floor(ageMin / 60)} h temu`;
+}
+
+function _updateVmmTimestamp() {
+    const tsEl = document.getElementById('vmm-timestamp');
+    if (!tsEl || !_vmmOpen) return;
+    const mode = _getVmmMode();
+    let ts = null;
+    if (mode === 'gps') ts = _getVmmTimestamp();
+    else if (mode === 'rt_only') ts = _getVmmTripUpdateTimestamp() ?? _getVmmTimestamp();
+    const label = ts != null ? _formatVmmAge(ts) : null;
+    if (label) { tsEl.textContent = label; tsEl.style.display = 'block'; }
+    else { tsEl.style.display = 'none'; }
+}
+
+function _buildVmmItems(opts = {}) {
+    const mode = _getVmmMode();
+    const items = [];
+
+    // Udostępnij – zawsze
+    items.push({
+        icon: 'share-2',
+        label: 'Udostępnij',
+        action: () => {
+            const url = window.location.href;
+            if (navigator.share) {
+                navigator.share({ url }).catch(() => {});
+            } else {
+                navigator.clipboard?.writeText(url).then(() => {}).catch(() => {});
+            }
+            _closeVmm();
+        }
+    });
+
+    if (opts.routeViewMenu) {
+        // Tryb: vc-calendar-btn w route view → Udostępnij + Rozkład brygady
+        items.push({
+            icon: 'calendar',
+            label: 'Rozkład brygady',
+            action: () => {
+                _closeVmm();
+                if (!currentVehicle) return;
+                const feedName = currentVehicle.feedName, routeId = currentVehicle.routeId;
+                if (feedName && routeId) openBrigadesOverlay(feedName, routeId);
+            }
+        });
+        return items;
+    }
+
+    // Rozkład brygady – dla trybu gps i rt_only
+    if (mode === 'gps' || mode === 'rt_only') {
+        items.push({
+            icon: 'calendar',
+            label: 'Rozkład brygady',
+            action: () => {
+                _closeVmm();
+                if (!currentVehicle) return;
+                const city = window.CITY_NAME;
+
+                // Widok pojazdu
+                if (currentVehicle.vehicleId) {
+                    window.location.href = `/${city}/vehicle/${encodeURIComponent(currentVehicle.vehicleId)}/brigade/`;
+                    return;
+                }
+
+                // Widok kursu (trip view)
+                const feedName = currentVehicle.feedName;
+                const tripId = currentVehicle.tripId || currentVehicleTrip?.trip_id || null;
+                const dateStr = currentTripDateStr || _todayDate();
+                if (feedName && tripId && dateStr) {
+                    window.location.href = `/${city}/trip/${encodeURIComponent(feedName)}/${encodeURIComponent(tripId)}/${encodeURIComponent(dateStr)}/brigade/`;
+                }
+            }
+        });
+    }
+
+    // Informacje o pojeździe – tylko tryb gps
+    if (mode === 'gps') {
+        items.push({
+            icon: 'wrench',
+            label: 'Informacje o pojeździe',
+            action: () => {
+                _closeVmm();
+                const vid = currentVehicle?.displayVehicleId ?? currentVehicle?.vehicleId;
+                if (vid) alert(`Pojazd #${vid}`);
+            }
+        });
+    }
+
+    return items;
+}
+
+function _openVmm(anchorEl, opts = {}) {
+    const menu = document.getElementById('vehicle-more-menu');
+    if (!menu) return;
+
+    _vmmOpen = true;
+
+    // Zbuduj zawartość
+    const itemsEl = document.getElementById('vmm-items');
+    itemsEl.innerHTML = '';
+    for (const item of _buildVmmItems(opts)) {
+        const btn = document.createElement('button');
+        btn.className = 'vmm-item';
+        btn.innerHTML = `<i data-lucide="${item.icon}"></i><span>${item.label}</span>`;
+        btn.onclick = item.action;
+        itemsEl.appendChild(btn);
+    }
+    lucide.createIcons();
+
+    // Timestamp – tylko w widoku pojazdu (nie w routeViewMenu)
+    const tsEl = document.getElementById('vmm-timestamp');
+    if (!opts.routeViewMenu) {
+        _updateVmmTimestamp();
+        if (_vmmTickTimer) clearInterval(_vmmTickTimer);
+        _vmmTickTimer = setInterval(_updateVmmTimestamp, 1000);
+    } else {
+        if (tsEl) tsEl.style.display = 'none';
+        if (_vmmTickTimer) { clearInterval(_vmmTickTimer); _vmmTickTimer = null; }
+    }
+
+    // Pokaż menu, potem oblicz pozycję (żeby offsetHeight był aktualny)
+    menu.classList.remove('vehicle-more-menu--hidden');
+
+    requestAnimationFrame(() => {
+        const rect = anchorEl.getBoundingClientRect();
+        const menuW = menu.offsetWidth || 240;
+        const menuH = menu.offsetHeight || 120;
+        let left = rect.right - menuW;
+        let top  = rect.bottom + 8;
+        if (left < 8) left = 8;
+        if (top + menuH > window.innerHeight - 8) top = rect.top - 8 - menuH;
+        menu.style.left = left + 'px';
+        menu.style.top  = top  + 'px';
+    });
+
+    setTimeout(() => {
+        document.addEventListener('click', _vmmOutsideClick, { once: true });
+    }, 10);
+}
+
+function _closeVmm() {
+    _vmmOpen = false;
+    if (_vmmTickTimer) { clearInterval(_vmmTickTimer); _vmmTickTimer = null; }
+    const menu = document.getElementById('vehicle-more-menu');
+    if (menu) menu.classList.add('vehicle-more-menu--hidden');
+}
+
+function _vmmOutsideClick(e) {
+    const menu = document.getElementById('vehicle-more-menu');
+    if (menu && !menu.contains(e.target)) _closeVmm();
+}
+
+// ════════════════════════════════════════
 //  PANEL BUTTON LISTENERS
 // ════════════════════════════════════════
 document.getElementById('vc-close-btn').addEventListener('click', () => {
@@ -2819,24 +3088,47 @@ document.getElementById('vc-gps-btn').addEventListener('click', () => {
     if (followVehicleEnabled && currentVehicleTrip.realtime.lat!=null && currentVehicleTrip.realtime.lon!=null)
         mapa.easeTo({ center: [currentVehicleTrip.realtime.lon, currentVehicleTrip.realtime.lat], duration: 800 });
 });
-document.getElementById('vc-more-btn').addEventListener('click', () => {
-    if (!_routeViewActive || !_currentRouteDetails) return;
-    const next = _currentRouteDirection === '0' ? '1' : '0', dirBlock = _currentRouteDetails.directions?.[next]??null;
-    if (!dirBlock || !Array.isArray(dirBlock.stops) || dirBlock.stops.length === 0) return;
-    _currentRouteDirection = next;
-    const routeType = currentVehicle?.routeType??3, routeCfg = ROUTE_TYPE_CONFIG[routeType]||ROUTE_TYPE_CONFIG[3], lineColor = currentVehicle?.routeColor?`#${currentVehicle.routeColor}`:routeCfg.color;
-    if (currentVehicle) currentVehicle.headsign = dirBlock.headsign||currentVehicle.routeShortName;
-    if (currentVehicleTrip) { currentVehicleTrip.headsign = currentVehicle.headsign; if (!currentVehicleTrip.realtime) currentVehicleTrip.realtime = {lat:null,lon:null,positionType:null,stop_times:[]}; currentVehicleTrip.realtime.stop_times = _buildRouteStopTimes(dirBlock.stops); }
-    _updateVehicleHeader(); _renderVehicleTimeline(); _renderTripShape(dirBlock.shape||[], lineColor); _renderTripStops(dirBlock.stops||[], lineColor);
-    _fitMapToShape(dirBlock.shape||[], `route:${currentVehicle?.feedName||''}:${currentVehicle?.routeId||''}:${_currentRouteDirection}`);
+
+// vc-more-btn:
+//   • w trybie trasy linii (route view) → odwraca kierunek (stare zachowanie)
+//   • w widoku pojazdu / kursu → otwiera/zamyka menu kontekstowe
+document.getElementById('vc-more-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+
+    if (_routeViewActive) {
+        // Stare zachowanie: zmień kierunek trasy
+        if (!_currentRouteDetails) return;
+        const next = _currentRouteDirection === '0' ? '1' : '0';
+        const dirBlock = _currentRouteDetails.directions?.[next] ?? null;
+        if (!dirBlock || !Array.isArray(dirBlock.stops) || dirBlock.stops.length === 0) return;
+        _currentRouteDirection = next;
+        const routeType = currentVehicle?.routeType ?? 3;
+        const routeCfg = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
+        const lineColor = currentVehicle?.routeColor ? `#${currentVehicle.routeColor}` : routeCfg.color;
+        if (currentVehicle) currentVehicle.headsign = dirBlock.headsign || currentVehicle.routeShortName;
+        if (currentVehicleTrip) {
+            currentVehicleTrip.headsign = currentVehicle.headsign;
+            if (!currentVehicleTrip.realtime) currentVehicleTrip.realtime = { lat: null, lon: null, positionType: null, stop_times: [] };
+            currentVehicleTrip.realtime.stop_times = _buildRouteStopTimes(dirBlock.stops);
+        }
+        _updateVehicleHeader();
+        _renderVehicleTimeline();
+        _renderTripShape(dirBlock.shape || [], lineColor);
+        _renderTripStops(dirBlock.stops || [], lineColor);
+        _fitMapToShape(dirBlock.shape || [], `route:${currentVehicle?.feedName || ''}:${currentVehicle?.routeId || ''}:${_currentRouteDirection}`);
+        return;
+    }
+
+    // Widok pojazdu / kursu: otwórz lub zamknij menu
+    if (_vmmOpen) { _closeVmm(); return; }
+    _openVmm(e.currentTarget);
 });
 
-// ── vc-calendar-btn: otwiera overlay brygad gdy w trybie trasy ────────────
-document.getElementById('vc-calendar-btn').addEventListener('click', () => {
-    if (!_routeViewActive || !currentVehicle) return;
-    const feedName = currentVehicle.feedName, routeId = currentVehicle.routeId;
-    if (!feedName || !routeId) return;
-    openBrigadesOverlay(feedName, routeId);
+// vc-calendar-btn: widoczny tylko w route view; otwiera menu z Udostępnij + Rozkład brygady
+document.getElementById('vc-calendar-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (_vmmOpen) { _closeVmm(); return; }
+    _openVmm(e.currentTarget, { routeViewMenu: true });
 });
 
 // ── Stop panel buttons ───────────────────────────────────────────────────────
@@ -2987,6 +3279,22 @@ function renderAscendingDepartures(rows, dateStr = null) {
 // ════════════════════════════════════════
 window.addEventListener('popstate', (event) => {
     const path = window.location.pathname||'', state = event.state||{};
+
+    // Nowe URL: /vehicle/.../brigade oraz /trip/.../brigade
+    const tripBrigade = _matchTripBrigadePath(path);
+    if (tripBrigade) {
+        openTripViewDirect(tripBrigade.feedName, tripBrigade.tripId, tripBrigade.date);
+        openBrigadeDetailOverlayFromTripAuto(tripBrigade.feedName, tripBrigade.tripId, tripBrigade.date);
+        return;
+    }
+
+    const matchedVehicleId = _matchVehicleBrigadePath(path);
+    if (matchedVehicleId) {
+        openVehicleViewFromUrl(matchedVehicleId);
+        openBrigadeDetailOverlayFromVehicleAuto(matchedVehicleId);
+        return;
+    }
+
     if (path.includes('/trip/')) { const parts = path.split('/trip/')[1]?.split('/').filter(Boolean); if (parts&&parts.length>=3) { const [feedName,tripId,date]=parts; openTripViewDirect(decodeURIComponent(feedName),decodeURIComponent(tripId),date); return; } }
     if (path.includes('/stops/')) { openStopViewFromUrl(); return; }
     else if (state.stopId) { openStopViewFromId(state.stopId); return; }
@@ -3086,15 +3394,9 @@ function _secondsToHHMM(secs) {
     return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 }
 
-/**
- * Wylicza zakresy czasu dla brygady z listy kursów.
- * Zwraca string np. "04:15 – 23:15" lub "21:33 – 00:25, 03:20 – 04:40"
- * Brygada nocna: przerwa > 90 min → nowy zakres.
- */
 function _computeBrigadeTimeRanges(courses) {
     if (!courses || courses.length === 0) return '--:-- – --:--';
-    // courses są posortowane chronologicznie
-    const GAP_THRESHOLD = 90 * 60; // 90 minut w sekundach
+    const GAP_THRESHOLD = 90 * 60;
     const ranges = [];
     let rangeStart = null, prevEnd = null;
     for (const course of courses) {
@@ -3119,6 +3421,88 @@ function _hideBrigadeOverlays() {
 }
 
 // ════════════════════════════════════════
+//  AUTO-BRYGADA (vehicle/trip -> block_id)
+// ════════════════════════════════════════
+let _brigadeAutoRequestSeq = 0;
+
+function _matchVehicleBrigadePath(pathname) {
+    const marker = `/${window.CITY_NAME}/vehicle/`;
+    const idx = String(pathname || '').indexOf(marker);
+    if (idx === -1) return null;
+    let rest = String(pathname || '').slice(idx + marker.length);
+    rest = rest.replace(/\/+$/, ''); // trim trailing slashes
+    if (!rest.endsWith('/brigade')) return null;
+    rest = rest.slice(0, -('/brigade'.length));
+    rest = rest.replace(/\/+$/, '');
+    if (!rest) return null;
+    return decodeURIComponent(rest);
+}
+
+function _matchTripBrigadePath(pathname) {
+    const marker = `/${window.CITY_NAME}/trip/`;
+    const idx = String(pathname || '').indexOf(marker);
+    if (idx === -1) return null;
+    let rest = String(pathname || '').slice(idx + marker.length);
+    rest = rest.replace(/\/+$/, '');
+    if (!rest.endsWith('/brigade')) return null;
+    rest = rest.slice(0, -('/brigade'.length));
+    rest = rest.replace(/\/+$/, '');
+    const parts = rest.split('/').filter(Boolean);
+    if (parts.length !== 3) return null;
+    const [feedNameEnc, tripIdEnc, dateEnc] = parts;
+    return {
+        feedName: decodeURIComponent(feedNameEnc),
+        tripId: decodeURIComponent(tripIdEnc),
+        date: decodeURIComponent(dateEnc),
+    };
+}
+
+async function openBrigadeDetailOverlayFromVehicleAuto(vehicleId) {
+    if (!vehicleId) return;
+    if (!Array.isArray(window.GTFS_FEEDS) || window.GTFS_FEEDS.length === 0) return;
+
+    const seq = ++_brigadeAutoRequestSeq;
+    _hideBrigadeOverlays();
+
+    for (const feed of window.GTFS_FEEDS) {
+        try {
+            const resp = await fetch(`/api/getTripByVehicle.json?feed_name=${encodeURIComponent(feed.name)}&vehicle_id=${encodeURIComponent(vehicleId)}`);
+            if (!resp.ok) continue;
+            const trip = await resp.json();
+            if (seq !== _brigadeAutoRequestSeq) return;
+
+            const feedName = trip.feed_name || feed.name;
+            const routeId = trip.route_id;
+            const blockId = trip.block_id;
+            if (!feedName || !routeId || !blockId || blockId === 'N/A') continue;
+
+            openBrigadeDetailOverlay(feedName, routeId, blockId, null, { pushUrl: false });
+            return;
+        } catch (e) {
+            // continue other feed
+        }
+    }
+}
+
+async function openBrigadeDetailOverlayFromTripAuto(feedName, tripId, dateStr) {
+    if (!feedName || !tripId || !dateStr) return;
+    const seq = ++_brigadeAutoRequestSeq;
+    _hideBrigadeOverlays();
+    try {
+        const resp = await fetch(`/api/getTripDetails.json?city=${encodeURIComponent(window.CITY_NAME)}&feed_name=${encodeURIComponent(feedName)}&date=${encodeURIComponent(dateStr)}&trip_id=${encodeURIComponent(tripId)}`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (seq !== _brigadeAutoRequestSeq) return;
+
+        const routeId = data.route_id;
+        const blockId = data.block_id;
+        if (!routeId || !blockId || blockId === 'N/A') return;
+
+        openBrigadeDetailOverlay(feedName, routeId, blockId, dateStr, { pushUrl: false });
+    } catch (e) {}
+}
+
+// ════════════════════════════════════════
 //  OVERLAY LISTA BRYGAD
 // ════════════════════════════════════════
 async function openBrigadesOverlay(feedName, routeId, dateStr = null) {
@@ -3127,25 +3511,21 @@ async function openBrigadesOverlay(feedName, routeId, dateStr = null) {
     if (!dateStr) dateStr = _todayDate();
     _brigadesState.selectedDate = dateStr;
 
-    // Ustaw URL
     const target = `/${window.CITY_NAME}/routes/${encodeURIComponent(feedName)}/${encodeURIComponent(routeId)}/brigades/`;
     if (window.location.pathname !== target) window.history.pushState({ brigadesView: true, feedName, routeId }, '', target);
 
     _show('brigades-overlay');
     lucide.createIcons();
 
-    // Pasek dat
     const today = new Date();
     const dates = _generateDateRange(today, 7, 14);
     _buildDateStrip('brigades-date-strip', 'brigades-date-label', 'brigades-date-prev', 'brigades-date-next', dates, dateStr, (d) => openBrigadesOverlay(feedName, routeId, d));
 
-    // Nagłówek – załaduj dane linii jeśli potrzeba
     await _fetchAllRouteDetailsForFeed(feedName);
     const routeData = routeDetailsCache[`${feedName}:${routeId}`] || null;
     _brigadesState.routeData = routeData;
     _renderBrigadesTitle(routeData);
 
-    // Załaduj brygady
     await _loadAndRenderBrigadesList(feedName, routeId, dateStr, routeData);
 }
 
@@ -3175,12 +3555,11 @@ async function _loadAndRenderBrigadesList(feedName, routeId, dateStr, routeData)
         return;
     }
 
-    // Filtruj tylko brygady kursujące na tej linii
     const blocks = data.blocks || {};
     const routeBlocks = {};
     for (const [blockId, courses] of Object.entries(blocks)) {
         const routeCourses = courses.filter(c => c.route_id === routeId);
-        if (routeCourses.length > 0) routeBlocks[blockId] = courses; // cała brygada (może mieć więcej linii)
+        if (routeCourses.length > 0) routeBlocks[blockId] = courses;
     }
 
     if (Object.keys(routeBlocks).length === 0) {
@@ -3192,7 +3571,6 @@ async function _loadAndRenderBrigadesList(feedName, routeId, dateStr, routeData)
     const cfg = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
     const bg  = routeData?.color ? `#${routeData.color}` : cfg.color;
 
-    // Sortuj brygady po pierwszym czasie odjazdu
     const sorted = Object.entries(routeBlocks).sort(([, coursesA], [, coursesB]) => {
         const startA = _gtfsTimeToSeconds(coursesA[0]?.start_time);
         const startB = _gtfsTimeToSeconds(coursesB[0]?.start_time);
@@ -3218,32 +3596,38 @@ async function _loadAndRenderBrigadesList(feedName, routeId, dateStr, routeData)
 // ════════════════════════════════════════
 //  OVERLAY SZCZEGÓŁY BRYGADY
 // ════════════════════════════════════════
-async function openBrigadeDetailOverlay(feedName, routeId, blockId, dateStr = null) {
+async function openBrigadeDetailOverlay(feedName, routeId, blockId, dateStr = null, { pushUrl = true } = {}) {
     _brigadesState.feedName = feedName;
     _brigadesState.routeId  = routeId;
     _brigadesState.blockId  = blockId;
     if (!dateStr) dateStr = _todayDate();
     _brigadesState.selectedDate = dateStr;
-    _brigadesState.activeRouteFilters = new Set(); // resetuj filtry
+    _brigadesState.activeRouteFilters = new Set();
 
-    // Ustaw URL
-    const target = `/${window.CITY_NAME}/routes/${encodeURIComponent(feedName)}/${encodeURIComponent(routeId)}/brigades/${encodeURIComponent(blockId)}/`;
-    if (window.location.pathname !== target) window.history.pushState({ brigadeDetailView: true, feedName, routeId, blockId }, '', target);
+    if (pushUrl) {
+        const target = `/${window.CITY_NAME}/routes/${encodeURIComponent(feedName)}/${encodeURIComponent(routeId)}/brigades/${encodeURIComponent(blockId)}/`;
+        if (window.location.pathname !== target) window.history.pushState({ brigadeDetailView: true, feedName, routeId, blockId }, '', target);
+    }
 
     _show('brigade-detail-overlay');
     lucide.createIcons();
 
-    // Pasek dat
     const today = new Date();
     const dates = _generateDateRange(today, 7, 14);
-    _buildDateStrip('brigade-detail-date-strip', 'brigade-detail-date-label', 'brigade-detail-date-prev', 'brigade-detail-date-next', dates, dateStr, (d) => openBrigadeDetailOverlay(feedName, routeId, blockId, d));
+    _buildDateStrip(
+        'brigade-detail-date-strip',
+        'brigade-detail-date-label',
+        'brigade-detail-date-prev',
+        'brigade-detail-date-next',
+        dates,
+        dateStr,
+        (d) => openBrigadeDetailOverlay(feedName, routeId, blockId, d, { pushUrl })
+    );
 
-    // Nagłówek
     await _fetchAllRouteDetailsForFeed(feedName);
     const routeData = routeDetailsCache[`${feedName}:${routeId}`] || null;
     _renderBrigadeDetailTitle(routeData, blockId);
 
-    // Załaduj kursy
     await _loadAndRenderBrigadeDetail(feedName, routeId, blockId, dateStr);
 }
 
@@ -3282,17 +3666,13 @@ async function _loadAndRenderBrigadeDetail(feedName, routeId, blockId, dateStr) 
     }
 
     const courses = dateEntry.courses;
-
-    // Zbierz unikalne linie
     const uniqueRouteIds = [...new Set(courses.map(c => c.route_id).filter(Boolean))];
     const multiRoute = uniqueRouteIds.length > 1;
 
-    // Zainicjuj filtry – domyślnie wszystkie aktywne
     if (_brigadesState.activeRouteFilters.size === 0) {
         uniqueRouteIds.forEach(rid => _brigadesState.activeRouteFilters.add(rid));
     }
 
-    // Renderuj filtry linii jeśli >1 linia
     if (multiRoute && filtersEl) {
         filtersEl.style.display = 'flex';
         _renderRouteFilters(uniqueRouteIds, feedName, () => _renderBrigadeCourses(courses, dateStr, feedName));
@@ -3335,7 +3715,6 @@ function _renderBrigadeCourses(courses, dateStr, feedName) {
     const scrollEl = document.getElementById('brigade-detail-scroll');
     if (!scrollEl) return;
 
-    // Filtruj kursy wg aktywnych filtrów
     const filtered = courses.filter(c => !c.route_id || _brigadesState.activeRouteFilters.has(c.route_id));
     if (filtered.length === 0) {
         scrollEl.innerHTML = '<div class="vehicle-no-data">Brak kursów dla wybranych linii.</div>';
@@ -3346,7 +3725,6 @@ function _renderBrigadeCourses(courses, dateStr, feedName) {
     for (let i = 0; i < filtered.length; i++) {
         const course = filtered[i], prev = filtered[i-1] || null;
 
-        // Separator przerwy między kursami
         if (prev) {
             const prevEndSec  = _gtfsTimeToSeconds(prev.end_time);
             const curStartSec = _gtfsTimeToSeconds(course.start_time);
@@ -3367,7 +3745,6 @@ function _renderBrigadeCourses(courses, dateStr, feedName) {
             }
         }
 
-        // Kurs
         const route = routeDetailsCache[`${feedName}:${course.route_id}`] || null;
         const routeType = route?.route_type != null ? Number(route.route_type) : 3;
         const cfg = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
@@ -3383,8 +3760,7 @@ function _renderBrigadeCourses(courses, dateStr, feedName) {
         const startHHMM = _secondsToHHMM(_gtfsTimeToSeconds(course.start_time));
         const endHHMM   = _secondsToHHMM(_gtfsTimeToSeconds(course.end_time));
 
-        // Czas przejazdu i odległość (obliczamy z stops)
-        let durationText = '', distanceText = '';
+        let durationText = '';
         if (course.stops && course.stops.length >= 2) {
             const startSec = _gtfsTimeToSeconds(course.start_time), endSec = _gtfsTimeToSeconds(course.end_time);
             if (startSec != null && endSec != null && endSec > startSec) {
@@ -3430,7 +3806,6 @@ function _renderBrigadeCourses(courses, dateStr, feedName) {
 
     scrollEl.innerHTML = pieces.join('');
 
-    // Event delegation – kliknięcie w kurs
     scrollEl.onclick = (e) => {
         const block = e.target.closest('.brigade-trip-block');
         if (!block) return;
@@ -3445,7 +3820,6 @@ function _renderBrigadeCourses(courses, dateStr, feedName) {
 // ════════════════════════════════════════
 document.getElementById('brigades-back-btn').addEventListener('click', () => {
     _hide('brigades-overlay');
-    // Wróć do widoku trasy linii
     const { feedName, routeId } = _brigadesState;
     if (feedName && routeId) {
         const target = `/${window.CITY_NAME}/routes/${encodeURIComponent(feedName)}/${encodeURIComponent(routeId)}/`;
