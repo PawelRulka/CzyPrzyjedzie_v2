@@ -2377,7 +2377,10 @@ function _applyStopMarkerFilter(tripIds, selectedStopMarkerId) {
     for (const [key, marker] of Object.entries(vehicleMarkers)) { const el = marker.getElement(); if (!el) continue; const meta = vehicleMarkerMeta[key]?.meta; el.style.display = _stopTripFilter.has(String(meta?.tripId ?? null)) ? 'block' : 'none'; }
 }
 function _clearStopMarkerFilter() {
-    _stopTripFilter = null; updateStopMarkersVisibility();
+    _stopTripFilter = null;
+    allStopMarkers.forEach(m => { const el = m.getElement(); if (el) el.style.display = ''; });
+    updateStopMarkersVisibility._lastShow = undefined;
+    updateStopMarkersVisibility();
     for (const marker of Object.values(vehicleMarkers)) { const el = marker.getElement(); if (el) el.style.display = 'block'; }
 }
 
