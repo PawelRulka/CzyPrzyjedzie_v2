@@ -636,6 +636,150 @@
             font-weight: 500;
             color: #9FA3A8;
         }
+        .stop-table-view {
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+            padding-bottom: 8px;
+        }
+        .stop-table-route-strip {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .stop-table-main-headsign {
+            font-family: 'Roboto', sans-serif;
+            font-size: 20px;
+            color: rgba(255,255,255,0.86);
+            margin: 1px 0 2px 0;
+            line-height: 1.25;
+        }
+        .stop-table-main-headsign b {
+            font-weight: 700;
+            color: #FFFFFF;
+        }
+        .stop-table-route-pill {
+            padding: 6px 10px;
+            border-radius: 9px;
+            font-size: 14px;
+            box-shadow: 0 6px 14px rgba(0,0,0,0.42);
+        }
+        .stop-table-route-pill--inactive {
+            filter: grayscale(0.9) saturate(0.25) brightness(0.72);
+            opacity: 0.72;
+        }
+        .stop-table-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        .stop-table-hour-row {
+            display: grid;
+            grid-template-columns: 24px 1fr;
+            align-items: baseline;
+            column-gap: 7px;
+            padding: 1px 0 3px 0;
+        }
+        .stop-table-hour-row + .stop-table-hour-row {
+            border-top: 1px solid rgba(255,255,255,0.10);
+            padding-top: 4px;
+        }
+        .stop-table-hour {
+            font-family: 'Roboto', sans-serif;
+            font-size: 20px;
+            font-weight: 500;
+            color: #FFFFFF;
+            line-height: 1;
+            letter-spacing: 0.3px;
+            text-align: left;
+        }
+        .stop-table-minutes {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 3px 6px;
+            align-items: baseline;
+            min-height: 14px;
+        }
+        .stop-table-minute {
+            position: relative;
+            border: none;
+            background: transparent;
+            padding: 0;
+            margin: 0;
+            cursor: pointer;
+            font-family: 'Roboto', sans-serif;
+            font-size: 14px;
+            font-weight: 400;
+            color: #D2D6D4;
+            line-height: 1;
+            letter-spacing: 0.2px;
+        }
+        .stop-table-minute:hover {
+            opacity: 0.92;
+        }
+        .stop-table-minute--past,
+        .stop-table-hour-row--past .stop-table-minute {
+            color: #808489;
+        }
+        .stop-table-hour-row--past .stop-table-hour {
+            color: #8C9095;
+        }
+        .stop-table-minute sup {
+            font-size: 50%;
+            vertical-align: baseline;
+            position: relative;
+            top: -0.62em;
+            margin-left: 1px;
+            font-weight: 700;
+            letter-spacing: 0;
+        }
+        .stop-table-minute-rt--ontime { color: #65E765; }
+        .stop-table-minute-rt--late { color: #FF6966; }
+        .stop-table-minute-rt--early { color: #FF9500; }
+        .stop-table-minute-with-note sub {
+            font-size: 50%;
+            vertical-align: baseline;
+            position: relative;
+            bottom: -0.24em;
+            margin-left: 1px;
+            color: #BFC3C1;
+        }
+        .stop-table-overflow-sep {
+            margin: 2px 0 0 0;
+            border-top: 1px solid rgba(255,255,255,0.10);
+            padding-top: 4px;
+        }
+        .stop-table-legend {
+            display: none;
+            margin-top: 4px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            font-family: 'Roboto', sans-serif;
+            font-size: 13px;
+            color: rgba(255,255,255,0.75);
+        }
+        .stop-table-legend-row {
+            line-height: 1.45;
+        }
+        .stop-table-tooltip {
+            position: fixed;
+            z-index: 5000;
+            display: none;
+            pointer-events: none;
+            max-width: 280px;
+            padding: 5px 8px;
+            border-radius: 7px;
+            background: rgba(17, 20, 24, 0.95);
+            border: 1px solid rgba(255,255,255,0.14);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+            color: rgba(255,255,255,0.92);
+            font-family: 'Roboto', sans-serif;
+            font-size: 12px;
+            font-weight: 500;
+            line-height: 1.3;
+            white-space: nowrap;
+            transform: translate(-50%, calc(-100% - 8px));
+        }
 
         /* ── Timeline: single continuous line via ::before ── */
         .vehicle-timeline {
@@ -1433,7 +1577,14 @@
                 Wybierz przystanek na mapie, aby zobaczyć odjazdy.
             </div>
             <div id="sp-departures-list"></div>
+            <div id="sp-table-view" class="stop-table-view">
+                <div id="sp-table-route-strip" class="stop-table-route-strip"></div>
+                <div id="sp-table-main-headsign" class="stop-table-main-headsign"></div>
+                <div id="sp-table-grid" class="stop-table-grid"></div>
+                <div id="sp-table-legend" class="stop-table-legend"></div>
+            </div>
         </div>
+        <div id="sp-table-tooltip" class="stop-table-tooltip"></div>
     </div>
 </div>
 
@@ -1860,6 +2011,7 @@ let currentTripStopMarkers = [];
 const TRIP_SHAPE_SOURCE_ID = 'current-trip-shape', TRIP_SHAPE_LAYER_ID = 'current-trip-shape-line';
 const STOP_NAME_BY_ID = {}, STOP_CODE_BY_ID = {}, STOP_COORDS_BY_ID = {}, STOP_META_BY_ID = {};
 let currentStop = null, stopDeparturesRefreshTimer = null;
+let _stopTableState = { stopId: null, dateStr: null, rows: [], selectedRouteKey: null };
 
 // ── Stop view time filter (one-time per stop view open) ───────────────────────
 let _stopTimeFilterActive = false;
@@ -2093,7 +2245,9 @@ function buildVehicleMarkerHTML(routeShortName, tripShortName, blockId, vehicleI
     const label = restParts.length ? `${base}/${restParts.join('/')}` : base;
     const arrowHTML = bearing != null ? `<div class="vm-arrow-wrap"><svg class="vm-arrow-svg" viewBox="0 0 14 14" style="transform:rotate(${bearing}deg);"><polygon points="7,1 13,13 7,10 1,13" fill="rgba(255,255,255,0.92)"/></svg></div>` : '';
     const estimatedIconHtml = isEstimated ? `<div class="vm-icon" style="-webkit-mask:url('${window.STATIC_URL}img/no_vp.png') no-repeat center/contain;mask:url('${window.STATIC_URL}img/no_vp.png') no-repeat center/contain;"></div>` : '';
-    const html = `<div class="vm-wrap"><div class="vm-body" style="background:${bg};">${arrowHTML}<div class="vm-icon" style="-webkit-mask:url('${iconUrl}') no-repeat center/contain;mask:url('${iconUrl}') no-repeat center/contain;"></div>${estimatedIconHtml}<span class="vm-label">${label}</span></div></div>`;
+    const baseLabel = tripShortName ? `<b>${line} ${tripShortName}</b>` : `<b>${line}</b>`;
+    const fullLabel = restParts.length ? `${baseLabel}/${restParts.join('/')}` : baseLabel;
+    const html = `<div class="vm-wrap"><div class="vm-body" style="background:${bg};">${arrowHTML}<div class="vm-icon" style="-webkit-mask:url('${iconUrl}') no-repeat center/contain;mask:url('${iconUrl}') no-repeat center/contain;"></div>${estimatedIconHtml}<span class="vm-label">${fullLabel}</span></div></div>`;
     return { html, bg };
 }
 
@@ -2639,6 +2793,19 @@ function _updateVehicleTooltip() {
 }
 if (!vehicleTooltipTickTimer) vehicleTooltipTickTimer = setInterval(_updateVehicleTooltip, 1000);
 
+// Dedykowany timer tylko dla vt-time — działa zawsze, niezależnie od ruchu mapy
+setInterval(() => {
+    const timeEl = document.getElementById('vt-time');
+    const tooltip = document.getElementById('vehicle-tooltip');
+    if (!timeEl || !tooltip || tooltip.classList.contains('vehicle-tooltip-hidden')) return;
+    if (!currentVehicleMarkerKey) return;
+    const metaWrap = vehicleMarkerMeta[currentVehicleMarkerKey];
+    const ts = metaWrap?.timestamp ?? null;
+    timeEl.textContent = ts != null
+        ? `${Math.max(0, Math.round(Date.now() / 1000 - ts))} s temu`
+        : 'brak danych';
+}, 1000);
+
 // ════════════════════════════════════════
 //  STOP VIEW (PANEL PRZYSTANKU)
 // ════════════════════════════════════════
@@ -2648,12 +2815,325 @@ function _updateStopHeader(meta) {
     if (titleEl) titleEl.textContent = `${meta.name} (${meta.code || meta.id})`;
     if (badgeIcons) badgeIcons.innerHTML = buildStopBadgeIcons(meta.routeTypes || []);
 }
-function _clearStopDepartures() { const list = document.getElementById('sp-departures-list'); if (list) list.innerHTML = ''; }
+function _hideStopTableTooltip() {
+    const tt = document.getElementById('sp-table-tooltip');
+    if (tt) tt.style.display = 'none';
+}
+function _setStopPanelContentMode(mode) {
+    const list = document.getElementById('sp-departures-list');
+    const table = document.getElementById('sp-table-view');
+    if (list) list.style.display = mode === 'table' ? 'none' : 'block';
+    if (table) table.style.display = mode === 'table' ? 'flex' : 'none';
+    if (mode !== 'table') _hideStopTableTooltip();
+}
+function _clearStopTableView() {
+    const strip = document.getElementById('sp-table-route-strip');
+    const mainHeadsign = document.getElementById('sp-table-main-headsign');
+    const grid = document.getElementById('sp-table-grid');
+    const legend = document.getElementById('sp-table-legend');
+    if (strip) strip.innerHTML = '';
+    if (mainHeadsign) mainHeadsign.innerHTML = '';
+    if (grid) grid.innerHTML = '';
+    if (legend) { legend.innerHTML = ''; legend.style.display = 'none'; }
+    _hideStopTableTooltip();
+}
+function _resetStopTableState() {
+    _stopTableState = { stopId: null, dateStr: null, rows: [], selectedRouteKey: null };
+    _clearStopTableView();
+}
+function _clearStopDepartures() {
+    const list = document.getElementById('sp-departures-list');
+    if (list) list.innerHTML = '';
+    _clearStopTableView();
+}
+
+async function _fetchRouteDetailsWithDirections(routeId, feedName) {
+    if (!routeId || !feedName) return null;
+    const key = `${feedName}:${routeId}`;
+    const cached = routeDetailsCache[key] || null;
+    if (cached?.directions) return cached;
+    try {
+        const resp = await fetch(`/api/getRouteDetails.json?city=${encodeURIComponent(window.CITY_NAME)}&feed_name=${encodeURIComponent(feedName)}&route_id=${encodeURIComponent(routeId)}`);
+        if (!resp.ok) return cached;
+        const full = await resp.json();
+        routeDetailsCache[key] = { ...(cached || {}), ...full };
+        return routeDetailsCache[key];
+    } catch (e) {
+        return cached;
+    }
+}
+function _parseGtfsClockParts(timeStr) {
+    if (!timeStr) return null;
+    const parts = String(timeStr).split(':');
+    if (parts.length < 2) return null;
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    const s = parts.length > 2 ? parseInt(parts[2], 10) : 0;
+    if ([h, m, s].some(v => Number.isNaN(v))) return null;
+    return { rawHour: h, minute: m, second: s, displayHour: ((h % 24) + 24) % 24, isOverflow: h >= 24 };
+}
+function _formatTableLetter(idx) {
+    if (idx < 0) return '';
+    let n = idx;
+    let out = '';
+    do {
+        out = String.fromCharCode(97 + (n % 26)) + out;
+        n = Math.floor(n / 26) - 1;
+    } while (n >= 0);
+    return out;
+}
+function _buildStopTableRouteList(rows) {
+    const byKey = new Map();
+    for (const item of rows) {
+        const feedName = item.feed_name || item.feed || (window.GTFS_FEEDS?.[0]?.name ?? '');
+        const routeId = item.route_id || '';
+        if (!feedName || !routeId) continue;
+        const key = `${feedName}:${routeId}`;
+        if (byKey.has(key)) continue;
+        const cached = routeDetailsCache[key] || null;
+        const routeType = cached?.route_type != null ? Number(cached.route_type) : 3;
+        const cfg = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
+        const colorHex = _safeHexColor(cached?.color || cached?.route_color);
+        byKey.set(key, {
+            key,
+            feedName,
+            routeId,
+            routeType,
+            bg: colorHex ? `#${colorHex}` : cfg.color,
+            icon: cfg.icon,
+            label: item.route_short_name || cached?.route_short_name || routeId || '?',
+        });
+    }
+    return [...byKey.values()].sort((a, b) => String(a.label).localeCompare(String(b.label), 'pl', { numeric: true, sensitivity: 'base' }));
+}
+function _renderStopTableTooltip(el, ev) {
+    const tt = document.getElementById('sp-table-tooltip');
+    if (!tt || !el) return;
+    const text = (el.getAttribute('data-headsign') || '').trim();
+    if (!text) { tt.style.display = 'none'; return; }
+    tt.textContent = text;
+    tt.style.left = `${ev.clientX}px`;
+    tt.style.top = `${ev.clientY}px`;
+    tt.style.display = 'block';
+}
+function _buildTableRowsForRoute(rows, routeInfo, directionHeadsignsSet) {
+    const normalByHour = new Map();
+    const overflowByHour = new Map();
+    const specialHeadsigns = new Map();
+    const now = _getStopFilterDateTime();
+    const targetDate = _stopTableState.dateStr || _todayDate();
+    const settings = loadSettings();
+    const normalizeHs = (v) => String(v || '').trim().toLowerCase();
+    const dirSet = directionHeadsignsSet || new Set();
+    for (const item of rows) {
+        const feedName = item.feed_name || item.feed || (window.GTFS_FEEDS?.[0]?.name ?? '');
+        const routeId = item.route_id || '';
+        if (feedName !== routeInfo.feedName || routeId !== routeInfo.routeId) continue;
+        const clock = _parseGtfsClockParts(item.departure_time || item.arrival_time);
+        if (!clock) continue;
+        const hsRaw = String(item.headsign || '').trim();
+        const hsNorm = normalizeHs(hsRaw);
+        let letter = '';
+        if (hsNorm && !dirSet.has(hsNorm)) {
+            if (!specialHeadsigns.has(hsNorm)) specialHeadsigns.set(hsNorm, { letter: _formatTableLetter(specialHeadsigns.size), headsign: hsRaw });
+            letter = specialHeadsigns.get(hsNorm).letter;
+        }
+        const group = clock.isOverflow ? overflowByHour : normalByHour;
+        if (!group.has(clock.displayHour)) group.set(clock.displayHour, []);
+        group.get(clock.displayHour).push({
+            minute: clock.minute,
+            second: clock.second,
+            headsign: hsRaw,
+            note: letter,
+            feedName,
+            routeId,
+            tripId: item.trip_id || '',
+            dateStr: item.date || targetDate,
+            markerKey: _findMarkerKeyByTripId(item.trip_id),
+            isPast: (() => {
+                const dt = _combineDateTimeToDate(targetDate, item.departure_time || item.arrival_time);
+                return dt ? dt < now : false;
+            })(),
+            rtNote: (() => {
+                if (!item || !item.rt_source || item.rt_source === 'static' || item.delay_seconds == null) return null;
+                const ds = Number(item.delay_seconds);
+                if (Number.isNaN(ds)) return null;
+                const text = _formatMarkerDelay(ds, settings);
+                if (text == null) return null;
+                const cls = (ds > -60 && ds < 60) ? 'stop-table-minute-rt--ontime' : (ds > 0 ? 'stop-table-minute-rt--late' : 'stop-table-minute-rt--early');
+                return { text, cls };
+            })(),
+        });
+    }
+    for (const values of normalByHour.values()) values.sort((a, b) => (a.minute - b.minute) || (a.second - b.second));
+    for (const values of overflowByHour.values()) values.sort((a, b) => (a.minute - b.minute) || (a.second - b.second));
+    return {
+        normalHours: [...normalByHour.keys()].sort((a, b) => a - b),
+        overflowHours: [...overflowByHour.keys()].sort((a, b) => a - b),
+        normalByHour,
+        overflowByHour,
+        legend: [...specialHeadsigns.values()].sort((a, b) => a.letter.localeCompare(b.letter)),
+    };
+}
+async function _renderStopTableFromState() {
+    const msg = document.getElementById('sp-message');
+    const strip = document.getElementById('sp-table-route-strip');
+    const mainHeadsign = document.getElementById('sp-table-main-headsign');
+    const grid = document.getElementById('sp-table-grid');
+    const legend = document.getElementById('sp-table-legend');
+    if (!strip || !mainHeadsign || !grid || !legend) return;
+    const rows = Array.isArray(_stopTableState.rows) ? _stopTableState.rows : [];
+    const routes = _buildStopTableRouteList(rows);
+    if (routes.length === 0) {
+        _clearStopTableView();
+        if (msg) { msg.textContent = 'Brak odjazdów dla tego przystanku w wybranym dniu.'; msg.style.display = 'block'; }
+        return;
+    }
+    if (!routes.some(r => r.key === _stopTableState.selectedRouteKey)) _stopTableState.selectedRouteKey = routes[0].key;
+    const activeRoute = routes.find(r => r.key === _stopTableState.selectedRouteKey) || routes[0];
+
+    strip.innerHTML = '';
+    for (const route of routes) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `route-pill stop-table-route-pill${route.key === activeRoute.key ? '' : ' stop-table-route-pill--inactive'}`;
+        btn.style.background = route.bg;
+        const iconEl = document.createElement('div');
+        iconEl.className = 'route-pill-icon';
+        iconEl.style.webkitMask = `url('${window.STATIC_URL}img/${route.icon}') no-repeat center/contain`;
+        iconEl.style.mask = `url('${window.STATIC_URL}img/${route.icon}') no-repeat center/contain`;
+        const labelEl = document.createElement('span');
+        labelEl.textContent = route.label;
+        btn.appendChild(iconEl);
+        btn.appendChild(labelEl);
+        btn.onclick = () => {
+            _stopTableState.selectedRouteKey = route.key;
+            _renderStopTableFromState();
+        };
+        strip.appendChild(btn);
+    }
+
+    const routeData = await _fetchRouteDetailsWithDirections(activeRoute.routeId, activeRoute.feedName);
+    const directionHeadsignsSet = new Set(
+        Object.values(routeData?.directions || {})
+            .map(d => String(d?.headsign || '').trim().toLowerCase())
+            .filter(Boolean)
+    );
+    const _escapeAttr = (value) => String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    const dominantHeadsign = (() => {
+        const counts = new Map();
+        for (const item of rows) {
+            const feedName = item.feed_name || item.feed || (window.GTFS_FEEDS?.[0]?.name ?? '');
+            const routeId = item.route_id || '';
+            if (feedName !== activeRoute.feedName || routeId !== activeRoute.routeId) continue;
+            const hs = String(item.headsign || '').trim();
+            if (!hs) continue;
+            counts.set(hs, (counts.get(hs) || 0) + 1);
+        }
+        if (counts.size > 0) {
+            return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+        }
+        const dirHeadsigns = Object.values(routeData?.directions || {}).map(d => String(d?.headsign || '').trim()).filter(Boolean);
+        return dirHeadsigns[0] || '—';
+    })();
+    mainHeadsign.innerHTML = `<b>${_escapeAttr(activeRoute.label)}</b> -> ${_escapeAttr(dominantHeadsign)}`;
+
+    const data = _buildTableRowsForRoute(rows, activeRoute, directionHeadsignsSet);
+    const buildRowsHtml = (hours, mapRef) => hours.map(h => {
+        const mins = mapRef.get(h) || [];
+        const allPast = mins.length > 0 && mins.every(m => m.isPast);
+        const minuteHtml = mins.map(m => {
+            const mm = String(m.minute).padStart(2, '0');
+            const cls = `stop-table-minute${m.note ? ' stop-table-minute-with-note' : ''}${m.isPast ? ' stop-table-minute--past' : ''}`;
+            const sup = m.rtNote ? `<sup class="${m.rtNote.cls}">${_escapeAttr(m.rtNote.text)}</sup>` : '';
+            const sub = m.note ? `<sub>${m.note}</sub>` : '';
+            return `<button type="button" class="${cls}" data-headsign="${_escapeAttr(m.headsign)}" data-trip-id="${_escapeAttr(m.tripId)}" data-feed-name="${_escapeAttr(m.feedName)}" data-date="${_escapeAttr(m.dateStr)}" data-has-vehicle="${m.markerKey ? '1' : '0'}">${mm}${sup}${sub}</button>`;
+        }).join('');
+        return `<div class="stop-table-hour-row${allPast ? ' stop-table-hour-row--past' : ''}"><div class="stop-table-hour">${String(h)}</div><div class="stop-table-minutes">${minuteHtml}</div></div>`;
+    }).join('');
+
+    let html = buildRowsHtml(data.normalHours, data.normalByHour);
+    if (data.overflowHours.length > 0) html += `<div class="stop-table-overflow-sep">${buildRowsHtml(data.overflowHours, data.overflowByHour)}</div>`;
+    grid.innerHTML = html || '<div class="vehicle-no-data">Brak odjazdów dla wybranej linii.</div>';
+
+    if (data.legend.length > 0) {
+        legend.innerHTML = data.legend.map(l => `<div class="stop-table-legend-row">${l.letter} - ${l.headsign || '—'}</div>`).join('');
+        legend.style.display = 'block';
+    } else {
+        legend.innerHTML = '';
+        legend.style.display = 'none';
+    }
+
+    grid.querySelectorAll('.stop-table-minute').forEach(el => {
+        el.addEventListener('mouseenter', (ev) => _renderStopTableTooltip(el, ev));
+        el.addEventListener('mousemove', (ev) => _renderStopTableTooltip(el, ev));
+        el.addEventListener('mouseleave', () => _hideStopTableTooltip());
+        el.addEventListener('click', () => {
+            const tripId = el.getAttribute('data-trip-id') || '';
+            const feedName = el.getAttribute('data-feed-name') || '';
+            const dateStr = el.getAttribute('data-date') || '';
+            if (!tripId) return;
+            if (el.getAttribute('data-has-vehicle') === '1') {
+                const key = _findMarkerKeyByTripId(tripId);
+                if (key) { openVehicleViewFromMarker(key); return; }
+            }
+            if (feedName && dateStr) window.location.href = `/${window.CITY_NAME}/trip/${encodeURIComponent(feedName)}/${encodeURIComponent(tripId)}/${dateStr}/`;
+        });
+    });
+    if (msg) msg.style.display = 'none';
+}
+function loadStopTableDepartures(meta) {
+    if (!meta || !meta.id) return;
+    _setStopPanelContentMode('table');
+    const msg = document.getElementById('sp-message');
+    if (msg) { msg.textContent = 'Ładowanie rozkładu...'; msg.style.display = 'block'; }
+    _clearStopTableView();
+    fetch(`/api/getScheduleForStop.json?city=${window.CITY_NAME}&stop_id=${encodeURIComponent(meta.id)}`)
+        .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+        .then(async data => {
+            const today = _todayDate();
+            const targetDate = _getStopFilterDateStr();
+            const schedule = Array.isArray(data.schedule) ? data.schedule : [];
+            const rows = schedule.filter(s => (s.date || today) === targetDate && !s.is_last_stop);
+            if (_stopTableState.stopId !== String(meta.id)) _stopTableState.selectedRouteKey = null;
+            if (rows.length === 0) {
+                _resetStopTableState();
+                _setStopPanelContentMode('table');
+                if (msg) {
+                    const dateFmt = (typeof _formatDateDisplay === 'function') ? _formatDateDisplay(targetDate) : targetDate;
+                    msg.textContent = `Brak odjazdów dla tego przystanku w dniu ${dateFmt}.`;
+                    msg.style.display = 'block';
+                }
+                return;
+            }
+            const feeds = [...new Set(rows.map(r => r.feed_name || r.feed || (window.GTFS_FEEDS?.[0]?.name ?? '')).filter(Boolean))];
+            await Promise.allSettled(feeds.map(f => _fetchAllRouteDetailsForFeed(f)));
+            _stopTableState.stopId = String(meta.id);
+            _stopTableState.dateStr = targetDate;
+            _stopTableState.rows = rows;
+            if (!_stopTableState.selectedRouteKey) {
+                const routeList = _buildStopTableRouteList(rows);
+                _stopTableState.selectedRouteKey = routeList[0]?.key || null;
+            }
+            await _renderStopTableFromState();
+        })
+        .catch(() => {
+            _resetStopTableState();
+            _setStopPanelContentMode('table');
+            if (msg) { msg.textContent = 'Nie udało się załadować rozkładu dla tego przystanku.'; msg.style.display = 'block'; }
+        });
+}
 function openStopView(meta) {
     if (!meta) return; closeVehicleView(); currentStop = meta;
     _resetStopTimeFilter();
+    _resetStopTableState();
     const panel = document.getElementById('stop-panel'); if (panel) panel.classList.remove('vehicle-panel-hidden');
     _setStopTabsActive('nearest'); _updateStopHeader(meta);
+    _setStopPanelContentMode('list');
     const msg = document.getElementById('sp-message'); if (msg) { msg.textContent = 'Ładowanie odjazdów...'; msg.style.display = 'block'; }
     _clearStopDepartures();
     if (stopDeparturesRefreshTimer) { clearInterval(stopDeparturesRefreshTimer); stopDeparturesRefreshTimer = null; }
@@ -2662,6 +3142,8 @@ function openStopView(meta) {
 function closeStopView(pushUrl = true) {
     currentStop = null;
     _resetStopTimeFilter();
+    _resetStopTableState();
+    _setStopPanelContentMode('list');
     const panel = document.getElementById('stop-panel'); if (panel) panel.classList.add('vehicle-panel-hidden');
     const msg = document.getElementById('sp-message'); if (msg) { msg.textContent = 'Wybierz przystanek na mapie, aby zobaczyć odjazdy.'; msg.style.display = 'block'; }
     _clearStopDepartures(); _clearStopMarkerFilter();
@@ -2672,6 +3154,7 @@ function _formatTimeHHMM(timeStr) { if (!timeStr) return null; const n = _normal
 
 function loadStopDepartures(meta) {
     if (!meta || !meta.id) return;
+    _setStopPanelContentMode('list');
     const msg = document.getElementById('sp-message'), list = document.getElementById('sp-departures-list');
     if (msg) { msg.textContent = 'Ładowanie odjazdów...'; msg.style.display = 'block'; }
     if (list) list.innerHTML = '';
@@ -3197,13 +3680,14 @@ document.getElementById('st-ok-btn')?.addEventListener('click', () => {
     const mode = document.querySelector('.stop-tab.stop-tab-active')?.getAttribute('data-mode') || 'nearest';
     if (mode === 'nearest') { if (currentStop) loadStopDepartures(currentStop); }
     else if (mode === 'ascending') { if (currentStop) loadAscendingDepartures(currentStop); }
+    else if (mode === 'table') { if (currentStop) loadStopTableDepartures(currentStop); }
 });
 document.querySelectorAll('.stop-tab').forEach(btn => {
     btn.addEventListener('click', () => {
         const mode = btn.getAttribute('data-mode'); _setStopTabsActive(mode);
         if (mode === 'nearest') { if (currentStop) loadStopDepartures(currentStop); }
         else if (mode === 'ascending') { if (currentStop) loadAscendingDepartures(currentStop); }
-        else { const msg = document.getElementById('sp-message'), list = document.getElementById('sp-departures-list'); if (list) list.innerHTML = ''; if (msg) { msg.textContent = 'Ten widok będzie dostępny w przyszłości.'; msg.style.display = 'block'; } }
+        else if (mode === 'table') { if (currentStop) loadStopTableDepartures(currentStop); }
     });
 });
 
@@ -3212,6 +3696,7 @@ document.querySelectorAll('.stop-tab').forEach(btn => {
 // ════════════════════════════════════════
 function loadAscendingDepartures(meta) {
     if (!meta || !meta.id) return;
+    _setStopPanelContentMode('list');
     const msg = document.getElementById('sp-message'), list = document.getElementById('sp-departures-list');
     if (msg) { msg.textContent = 'Ładowanie rozkładu...'; msg.style.display = 'block'; }
     if (list) list.innerHTML = '';

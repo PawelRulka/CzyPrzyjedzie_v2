@@ -855,6 +855,9 @@ def get_schedule_for_stop(request):
             sched_arr = st.get("arrival_time", "")
             sched_dep = st.get("departure_time", "")
             stop_seq = int(st.get("stop_sequence", 0))
+            trip_stops = indexes["stop_times_by_trip"].get(trip_id, [])
+            max_trip_seq = max((int(ts.get("stop_sequence", 0)) for ts in trip_stops), default=stop_seq)
+            is_last_stop = stop_seq >= max_trip_seq
 
             rt_info = get_single_stop_realtime(
                 trip_id=trip_id,
@@ -884,6 +887,7 @@ def get_schedule_for_stop(request):
                     "pickup_type": _normalize_pickup_dropoff(st.get("pickup_type")),
                     "drop_off_type": _normalize_pickup_dropoff(st.get("drop_off_type")),
                     "block_id": block_id,
+                    "is_last_stop": is_last_stop,
                     "date": dt.strftime("%Y%m%d"),
                     "status": rt_info["status"],
                     "real_arrival": rt_info["real_arrival"],
