@@ -1241,7 +1241,7 @@
 
         /* Kurs (trip) w brygadzie – timeline style */
         .brigade-trip-block {
-            background: rgba(22,26,32,0.95);
+            background: rgba(40,45,50,0.85);
             border-radius: 12px;
             padding: 12px 14px 10px 14px;
             margin-bottom: 4px;
@@ -1250,7 +1250,7 @@
             border-left: 4px solid transparent;
             position: relative;
         }
-        .brigade-trip-block:hover { background: rgba(35,40,48,0.98); }
+        .brigade-trip-block:hover { background: rgba(55,62,70,0.95); }
 
         .brigade-trip-header {
             display: flex;
@@ -2466,12 +2466,20 @@ function _normalizeGtfsTime(timeStr) {
     if (s !== null) return `${hh}:${mm}:${String(s).padStart(2,'0')}`;
     return `${hh}:${mm}`;
 }
-function _gtfsTimeToDate(timeStr) {
+// PO:
+function _gtfsTimeToDate(timeStr, baseDateStr = null) {
     if (!timeStr) return null;
     const parts = String(timeStr).split(':'); if (parts.length < 2) return null;
     const h = parseInt(parts[0],10), m = parseInt(parts[1],10)||0, s = parts.length > 2 ? parseInt(parts[2],10)||0 : 0;
     if (Number.isNaN(h)||Number.isNaN(m)||Number.isNaN(s)) return null;
-    const now = new Date(), base = new Date(now.getFullYear(),now.getMonth(),now.getDate(),0,0,0,0);
+    let base;
+    if (baseDateStr && /^\d{8}$/.test(baseDateStr)) {
+        const y = parseInt(baseDateStr.slice(0,4),10), mo = parseInt(baseDateStr.slice(4,6),10)-1, d = parseInt(baseDateStr.slice(6,8),10);
+        base = new Date(y, mo, d, 0, 0, 0, 0);
+    } else {
+        const now = new Date();
+        base = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    }
     base.setDate(base.getDate() + Math.floor(h/24)); base.setHours(h%24,m,s,0); return base;
 }
 function _formatEtaLabel(targetDate) {
@@ -2483,8 +2491,10 @@ function _formatEtaLabel(targetDate) {
 function _statusMapping(delaySeconds, status, source, hasRealtimePosition) {
     if (status === 'passed') return { label: 'Odjechał', className: 'vehicle-stop-status--passed', icon: hasRealtimePosition ? 'vp_ontime.png' : 'no_realtime.png' };
     if (source === 'static') return { label: 'Brak danych realtime', className: 'vehicle-stop-status--static', icon: 'no_realtime.png' };
+    // Jeśli mamy źródło RT ale brak danych o opóźnieniu → kurs jeszcze nie operuje
+    if (delaySeconds == null) return { label: 'Brak danych realtime', className: 'vehicle-stop-status--static', icon: 'no_realtime.png' };
     const prefix = hasRealtimePosition ? 'vp_' : 'no_vp_', showSec = loadSettings().showSeconds;
-    if (delaySeconds == null || (delaySeconds > -60 && delaySeconds < 60)) return { label: 'Planowo', className: 'vehicle-stop-status--ontime', icon: `${prefix}ontime.png` };
+    if (delaySeconds > -60 && delaySeconds < 60) return { label: 'Planowo', className: 'vehicle-stop-status--ontime', icon: `${prefix}ontime.png` };
     const absSec = Math.abs(delaySeconds), mins = Math.floor(absSec/60), secs = absSec % 60;
     if (delaySeconds > 0) { const label = showSec ? (secs > 0 ? `Opóźniony ${mins} min i ${secs} s` : `Opóźniony ${mins} min`) : `Opóźniony ${mins} min`; return { label, className: 'vehicle-stop-status--late', icon: `${prefix}late.png` }; }
     const label = showSec ? (secs > 0 ? `${mins} min i ${secs} s przed czasem` : `${mins} min przed czasem`) : `${mins} min przed czasem`;
@@ -2554,6 +2564,7 @@ function _tripStopPickupDropoffIcon(stop) {
     if (p === '1' && d === '0') return '⬅️';
     return '';
 }
+// PO:
 function _buildPickupDropoffLookup(stops) {
     const map = {};
     if (!Array.isArray(stops)) return map;
@@ -2561,8 +2572,10 @@ function _buildPickupDropoffLookup(stops) {
         if (!st) continue;
         const sid = st.stop_id != null ? String(st.stop_id) : null;
         const seq = st.stop_sequence != null ? String(st.stop_sequence) : null;
-        if (!sid || !seq) continue;
-        map[`${sid}:${seq}`] = st;
+        if (!sid) continue;
+        if (seq) map[`${sid}:${seq}`] = st;
+        // Fallback bez sekwencji – nadpisywany kolejnymi wpisami, ale lepszy niż nic
+        if (!map[sid]) map[sid] = st;
     }
     return map;
 }
@@ -2642,6 +2655,11 @@ function _applyEstimatedDelay(trip) {
     }
 }
 
+function _currentTripBaseDateStr() {
+    // Preferuj datę z openTripViewDirect; fallback do dzisiaj
+    return currentTripDateStr || _todayDate();
+}
+
 // ════════════════════════════════════════
 //  VEHICLE TIMELINE RENDERING
 // ════════════════════════════════════════
@@ -2660,8 +2678,9 @@ function _renderVehicleTimeline() {
         const pieces = stopTimes.map(st => {
             const sid = String(st.stop_id), name = STOP_NAME_BY_ID[sid] || `Przystanek ${sid}`, stopCode = STOP_CODE_BY_ID[sid] || null;
             const fullNameRaw = stopCode ? `${name} (${stopCode})` : `${name} (${sid})`;
+            // PO:
             const key = st?.stop_id != null && st?.stop_sequence != null ? `${String(st.stop_id)}:${String(st.stop_sequence)}` : null;
-            const staticStop = key ? pickupDropoffByStopKey[key] : null;
+            const staticStop = (key ? pickupDropoffByStopKey[key] : null) ?? pickupDropoffByStopKey[String(st.stop_id)] ?? null;
             const fullName = _stopNameWithPickupDropoffIcon(staticStop, fullNameRaw);
             return `<div class="vehicle-stop"><div class="vehicle-stop-line"><div class="vehicle-stop-dot"></div></div><div class="vehicle-stop-info"><div class="vehicle-stop-name">${fullName}</div></div></div>`;
         });
@@ -2691,7 +2710,9 @@ function _renderVehicleTimeline() {
         const staticStop = key ? pickupDropoffByStopKey[key] : null;
         const fullName = _stopNameWithPickupDropoffIcon(staticStop, fullNameRaw);
         const schedArr = st.scheduled_arrival||'', schedDep = st.scheduled_departure||'', realArr = st.real_arrival||'', realDep = st.real_departure||'';
-        const schedEtaDate = _gtfsTimeToDate(schedDep||schedArr), realEtaDate = _gtfsTimeToDate(realDep||realArr);
+        // PO:
+        const _bd = _currentTripBaseDateStr();
+        const schedEtaDate = _gtfsTimeToDate(schedDep||schedArr, _bd), realEtaDate = _gtfsTimeToDate(realDep||realArr, _bd);
         const etaDate = waitingAtTerminus ? schedEtaDate : (realEtaDate||schedEtaDate);
         const eta = (st.status === 'upcoming' || st.status === 'current') ? _formatEtaLabel(etaDate) : null;
         let mapping;
@@ -3179,7 +3200,7 @@ function _findMarkerKeyByTripId(tripId) {
 function renderStopDepartures(rows) {
     const msg = document.getElementById('sp-message'), list = document.getElementById('sp-departures-list'); if (!list) return;
     if (!rows || rows.length === 0) { list.innerHTML = ''; if (msg) { msg.textContent = 'Brak nadchodzących odjazdów dla tego przystanku.'; msg.style.display = 'block'; } return; }
-    const today = _todayDate(), now = _getStopFilterDateTime(), nowDateStr = _getStopFilterDateStr();
+    const today = _todayDate(), now = _getStopFilterDateTime();
     const pieces = rows.map(item => {
         const s = loadSettings(), line = item.route_short_name||item.route_id||'?', headsign = item.headsign||'', tripShort = item.trip_short_name||null, blockId = (item.block_id&&item.block_id!=='N/A')?item.block_id:null, vehicleLbl = item.vehicle_label||null;
         const restParts = []; if (s.showBrigade&&blockId) restParts.push(blockId); if (s.showVehicle&&vehicleLbl) restParts.push(vehicleLbl);
@@ -3194,9 +3215,12 @@ function renderStopDepartures(rows) {
         const dispArr = _formatTimeHHMM(rawArr), dispDep = _formatTimeHHMM(rawDep);
         let stopTimeDisplay; if (dispArr&&dispDep&&dispArr!==dispDep) stopTimeDisplay=`${dispArr}&nbsp;/&nbsp;${dispDep}`; else stopTimeDisplay=dispArr||dispDep||'--:--';
         const etaTimeStr = item.real_departure||item.departure_time||item.real_arrival||item.arrival_time;
-        let etaLabel = ''; if (dateStr===nowDateStr) { const dt = _combineDateTimeToDate(dateStr, etaTimeStr); if (dt&&dt>now) etaLabel=_formatEtaLabel(dt)||''; }
+        const departureDateTime = _combineDateTimeToDate(dateStr, etaTimeStr);
+        let etaLabel = '';
+        if (departureDateTime && departureDateTime > now) etaLabel = _formatEtaLabel(departureDateTime) || '';
         const hasRealtimePosition = hasRt&&item.position_type!=='estimated';
-        const mapping = _statusMapping(item.delay_seconds, item.status, item.rt_source||'static', hasRealtimePosition);
+        const effectiveStatus = (item.status === 'passed' && departureDateTime && departureDateTime > now) ? 'upcoming' : item.status;
+        const mapping = _statusMapping(item.delay_seconds, effectiveStatus, item.rt_source||'static', hasRealtimePosition);
         const markerKey = _findMarkerKeyByTripId(item.trip_id);
         return `<div class="stop-departure-row stop-departure-row--clickable" data-trip-id="${item.trip_id||''}" data-feed-name="${feedName}" data-date="${dateStr}" data-has-vehicle="${markerKey?'1':'0'}">
             <div class="stop-departure-meta">
@@ -3278,7 +3302,7 @@ async function openVehicleViewFromUrl(vehicleId) {
 // ════════════════════════════════════════
 function _buildStaticStopTimes(stops) {
     if (!Array.isArray(stops)) return []; const now = new Date();
-    return stops.map(st => { const depDate = _gtfsTimeToDate(st.departure_time||st.arrival_time||''); return { stop_id: st.stop_id, scheduled_arrival: st.arrival_time||'', scheduled_departure: st.departure_time||st.arrival_time||'', real_arrival: null, real_departure: null, delay_seconds: null, status: (depDate && depDate < now) ? 'passed' : 'upcoming', source: 'static' }; });
+    return stops.map(st => { const depDate = _gtfsTimeToDate(st.departure_time||st.arrival_time||'', _currentTripBaseDateStr()); return { stop_id: st.stop_id, scheduled_arrival: st.arrival_time||'', scheduled_departure: st.departure_time||st.arrival_time||'', real_arrival: null, real_departure: null, delay_seconds: null, status: (depDate && depDate < now) ? 'passed' : 'upcoming', source: 'static' }; });
 }
 async function openTripViewDirect(feedName, tripId, date, { refresh = false } = {}) {
     closeStopView(false);
@@ -3310,7 +3334,7 @@ async function openTripViewDirect(feedName, tripId, date, { refresh = false } = 
         if (rt&&Array.isArray(rt.stop_times)&&rt.stop_times.length>0) realtimeBlock = { lat: rt.lat??null, lon: rt.lon??null, positionType: rt.positionType??null, stop_times: rt.stop_times };
         else if (rt&&rt.lat!=null&&rt.lon!=null) realtimeBlock = { lat: rt.lat, lon: rt.lon, positionType: rt.positionType??null, stop_times: _buildStaticStopTimes(data.stops||[]) };
         else realtimeBlock = { lat: null, lon: null, positionType: null, stop_times: _buildStaticStopTimes(data.stops||[]) };
-        currentVehicleTrip = { trip_id: tripId, route_id: data.route_id||null, headsign: data.headsign||null, estimatedDelay: data.estimatedDelay??null, realtime: realtimeBlock };
+        currentVehicleTrip = { trip_id: tripId, route_id: data.route_id||null, headsign: data.headsign||null, estimatedDelay: data.estimatedDelay??null, realtime: realtimeBlock, stops: data.stops||[] };
         _applyEstimatedDelay(currentVehicleTrip); _updateVehicleHeader(); _renderVehicleTimeline(); updateGpsButtonState();
         const lineColor = currentVehicle.routeColor ? `#${currentVehicle.routeColor}` : routeCfg.color;
         _renderTripShape(data.shape||[], lineColor); _renderTripStops(data.stops||[], lineColor); _fitMapToShape(data.shape||[], `trip:${feedName}:${tripId}:${date}`);
@@ -4056,10 +4080,9 @@ async function _loadAndRenderBrigadesList(feedName, routeId, dateStr, routeData)
     const cfg = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
     const bg  = routeData?.color ? `#${routeData.color}` : cfg.color;
 
-    const sorted = Object.entries(routeBlocks).sort(([, coursesA], [, coursesB]) => {
-        const startA = _gtfsTimeToSeconds(coursesA[0]?.start_time);
-        const startB = _gtfsTimeToSeconds(coursesB[0]?.start_time);
-        return (startA??0) - (startB??0);
+    // PO:
+    const sorted = Object.entries(routeBlocks).sort(([blockIdA], [blockIdB]) => {
+        return blockIdA.localeCompare(blockIdB, 'pl', { numeric: true, sensitivity: 'base' });
     });
 
     listEl.innerHTML = '';

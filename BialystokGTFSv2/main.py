@@ -83,7 +83,7 @@ CITIES: list[dict] = [
             {"lines": "100-104",               "route_color": "225AC9", "route_text_color": "FFFFFF"},
             {"lines": "108-109",               "route_color": "225AC9", "route_text_color": "FFFFFF"},
             {"lines": "112-142",               "route_color": "225AC9", "route_text_color": "FFFFFF"},
-            {"lines": ["N1","N2","N3","N4","N5","N6"], "route_color": "334455", "route_text_color": "FFFFFF"},
+            {"lines": ["N1","N2","N3","N4","N5","N6"], "route_color": "31285F", "route_text_color": "FFFFFF"},
             {"lines": ["J1","J2","J3","J4","J5","J6"], "route_color": "D83E46", "route_text_color": "FFFFFF"},
         ],
 
