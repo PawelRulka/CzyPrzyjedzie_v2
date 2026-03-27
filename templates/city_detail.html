@@ -24,6 +24,16 @@
         window.INITIAL_TRIP_FEED = "{{ selected_feed_name|default:''|escapejs }}";
         window.INITIAL_TRIP_ID   = "{{ selected_trip_id|default:''|escapejs }}";
         window.INITIAL_TRIP_DATE = "{{ selected_date|default:''|escapejs }}";
+
+        // Zapamiętaj ostatnio otwarte miasto
+        try {
+            localStorage.setItem('czyprzyjezdzie_last_city', window.CITY_NAME);
+        } catch (e) {}
+
+        function openCitySelection() {
+            try { localStorage.removeItem('czyprzyjezdzie_last_city'); } catch (e) {}
+            window.location.href = '/';
+        }
     </script>
     <style>
         /* ── Settings panel ── */
@@ -1595,10 +1605,12 @@
         <h1 class="main-title">CzyPrzyjedzie</h1>
         <p class="subtitle"><i>„Gdzie jest ten cholerny autobus?"</i></p>
         <div class="menu-buttons">
-            <a href="/" class="city-button">
-                <span class="menu-icon"><i data-lucide="building-2"></i></span>
-                <div class="city-content"><div class="city-name-line">Wybór miasta</div></div>
-            </a>
+            <a href="#" class="city-button" onclick="openCitySelection(); return false;">
+    <span class="menu-icon"><i data-lucide="building-2"></i></span>
+    <div class="city-content">
+        <div class="city-name-line">Wybór miasta</div>
+    </div>
+</a>
             <div class="city-button" onclick="closeMenu()">
                 <span class="menu-icon"><i data-lucide="map-pin"></i></span>
                 <div class="city-content"><div class="city-name-line">Mapa</div></div>

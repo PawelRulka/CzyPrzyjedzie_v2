@@ -68,5 +68,22 @@
         attributionControl: false
     });
 </script>
+<script>
+(function() {
+    try {
+        const lastCity = localStorage.getItem('czyprzyjezdzie_last_city');
+        if (!lastCity) return;
+
+        // Sprawdź czy miasto z listy istnieje w dostępnych miastach
+        const availableCities = [
+            {% for city in cities %}"{{ city.name }}"{% if not forloop.last %},{% endif %}{% endfor %}
+        ];
+
+        if (availableCities.includes(lastCity)) {
+            window.location.replace('/' + encodeURIComponent(lastCity) + '/');
+        }
+    } catch (e) {}
+})();
+</script>
 </body>
 </html>
