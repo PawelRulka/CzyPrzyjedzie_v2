@@ -872,6 +872,19 @@ def get_schedule_for_stop(request):
             )
 
             for dt in valid_dates:
+                if dt == today:
+                    status = rt_info["status"]
+                    real_arrival = rt_info["real_arrival"]
+                    real_departure = rt_info["real_departure"]
+                    delay_seconds = rt_info["delay_seconds"]
+                    rt_source = rt_info["source"]
+                else:
+                    status = "upcoming"
+                    real_arrival = None
+                    real_departure = None
+                    delay_seconds = None
+                    rt_source = "static"
+
                 result.append({
                     "feed": feed.name,
                     "trip_id": trip_id,
@@ -889,11 +902,11 @@ def get_schedule_for_stop(request):
                     "block_id": block_id,
                     "is_last_stop": is_last_stop,
                     "date": dt.strftime("%Y%m%d"),
-                    "status": rt_info["status"],
-                    "real_arrival": rt_info["real_arrival"],
-                    "real_departure": rt_info["real_departure"],
-                    "delay_seconds": rt_info["delay_seconds"],
-                    "rt_source": rt_info["source"],
+                    "status": status,
+                    "real_arrival": real_arrival,
+                    "real_departure": real_departure,
+                    "delay_seconds": delay_seconds,
+                    "rt_source": rt_source,
                 })
 
     return JsonResponse({"city": city.display_name, "stop_id": stop_id, "schedule": result})
