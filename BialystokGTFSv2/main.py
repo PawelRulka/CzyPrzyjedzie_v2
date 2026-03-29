@@ -310,8 +310,8 @@ MANUAL_TRIPS: list[dict] = [
             {"stop_id": "1001",  "departure_time": "03:44:00", "pickup_type": 1, "drop_off_type": 1},
         ],
     },
-	
-	
+
+
 	{
         "route_id":     "N2",
         "block_id":     "N2-01",
@@ -356,8 +356,8 @@ MANUAL_TRIPS: list[dict] = [
             {"stop_id": "1000",  "departure_time": "03:23:00", "pickup_type": 1, "drop_off_type": 1},
         ],
     },
-	
-	
+
+
 	{
         "route_id":     "N3",
         "block_id":     "N3-01",
@@ -402,8 +402,8 @@ MANUAL_TRIPS: list[dict] = [
             {"stop_id": "1000",  "departure_time": "03:30:00", "pickup_type": 1, "drop_off_type": 1},
         ],
     },
-	
-	
+
+
 	{
         "route_id":     "N4",
         "block_id":     "N4-01",
@@ -448,8 +448,8 @@ MANUAL_TRIPS: list[dict] = [
             {"stop_id": "1000",  "departure_time": "03:45:00", "pickup_type": 1, "drop_off_type": 1},
         ],
     },
-	
-	
+
+
 	{
         "route_id":     "N5",
         "block_id":     "N5-01",
@@ -494,8 +494,8 @@ MANUAL_TRIPS: list[dict] = [
             {"stop_id": "1001",  "departure_time": "03:45:00", "pickup_type": 1, "drop_off_type": 1},
         ],
     },
-	
-	
+
+
 	{
         "route_id":     "N6",
         "block_id":     "N6-01",
@@ -540,9 +540,9 @@ MANUAL_TRIPS: list[dict] = [
             {"stop_id": "1001",  "departure_time": "03:44:00", "pickup_type": 1, "drop_off_type": 1},
         ],
     },
-	
-	
-	
+
+
+
 		{
         "route_id":     "N1",
         "block_id":     "N1-01",
@@ -587,8 +587,8 @@ MANUAL_TRIPS: list[dict] = [
             {"stop_id": "1001",  "departure_time": "03:44:00", "pickup_type": 1, "drop_off_type": 1},
         ],
     },
-	
-	
+
+
 	{
         "route_id":     "N2",
         "block_id":     "N2-01",
@@ -633,8 +633,8 @@ MANUAL_TRIPS: list[dict] = [
             {"stop_id": "1000",  "departure_time": "03:23:00", "pickup_type": 1, "drop_off_type": 1},
         ],
     },
-	
-	
+
+
 	{
         "route_id":     "N3",
         "block_id":     "N3-01",
@@ -679,8 +679,8 @@ MANUAL_TRIPS: list[dict] = [
             {"stop_id": "1000",  "departure_time": "03:30:00", "pickup_type": 1, "drop_off_type": 1},
         ],
     },
-	
-	
+
+
 	{
         "route_id":     "N4",
         "block_id":     "N4-01",
@@ -725,8 +725,8 @@ MANUAL_TRIPS: list[dict] = [
             {"stop_id": "1000",  "departure_time": "03:45:00", "pickup_type": 1, "drop_off_type": 1},
         ],
     },
-	
-	
+
+
 	{
         "route_id":     "N5",
         "block_id":     "N5-01",
@@ -771,8 +771,8 @@ MANUAL_TRIPS: list[dict] = [
             {"stop_id": "1001",  "departure_time": "03:45:00", "pickup_type": 1, "drop_off_type": 1},
         ],
     },
-	
-	
+
+
 	{
         "route_id":     "N6",
         "block_id":     "N6-01",
@@ -960,7 +960,7 @@ async def generate_city(city_cfg: dict) -> bytes:
 
     now          = datetime.now()
     feed_start   = now.strftime("%Y%m%d")
-    feed_end     = (now + timedelta(days=90)).strftime("%Y%m%d")
+    feed_end     = (now + timedelta(days=29)).strftime("%Y%m%d")
     feed_version = now.strftime("%Y%m%d%H%M")
 
     log.info("[%s] Rozpoczynanie generowania GTFS-Static ...", city_name)
@@ -981,10 +981,25 @@ async def generate_city(city_cfg: dict) -> bytes:
             api.get("getMainVariantsByLineName.json"),
         )
 
-        stops         = stops_data["stopPoints"]
-        lines         = lines_data["lines"]
-        calendar_days = calendar_data["days"]
+        stops = stops_data["stopPoints"]
+        lines = lines_data["lines"]
         variant_names = variant_names_raw or {}
+
+        # ── Okno czasowe: dziś + 29 dni do przodu (łącznie 30 dni) ───────────────
+        _today_date = datetime.now(tz=_WARSAW).date()
+        _cutoff_date = _today_date + timedelta(days=29)
+
+        def _in_window(date_ms: int) -> bool:
+            d = datetime.fromtimestamp(date_ms / 1000, tz=_WARSAW).date()
+            return _today_date <= d <= _cutoff_date
+
+        calendar_days_all = calendar_data["days"]
+        calendar_days = [day for day in calendar_days_all if _in_window(day["date"])]
+        log.info(
+            "[%s] Okno kalendarza: %s – %s (%d / %d dni zachowanych)",
+            city_name, _today_date, _cutoff_date,
+            len(calendar_days), len(calendar_days_all),
+        )
 
         variant_direction: dict[int, int] = {}
         for _line, variants in (main_variants_raw or {}).items():
@@ -1005,59 +1020,77 @@ async def generate_city(city_cfg: dict) -> bytes:
         log.info("[%s] %d przystanków, %d linii, %d dni kalendarza",
                  city_name, len(stops), len(lines), len(calendar_days))
 
-        # 2. Kalendarz → service_id
-        service_dates: dict[str, list[str]]    = defaultdict(list)
-        service_representative: dict[str, int] = {}
-
+        # ── 2. Kalendarz → WSZYSTKIE daty per symbol ───────────────────────────────
+        # symbol_all_dates: base_symbol → [(date_str, date_ms)]  (bez _T)
+        symbol_all_dates: dict[str, list[tuple[str, int]]] = defaultdict(list)
         for day in calendar_days:
-            raw_sym    = day["dayType"]["dayTypeSymbol"]
-            service_id = strip_today_suffix(raw_sym)
-            date_str   = ms_to_date_str(day["date"])
-            service_dates[service_id].append(date_str)
-            if "_T" not in raw_sym and service_id not in service_representative:
-                service_representative[service_id] = day["date"]
+            raw_sym = day["dayType"]["dayTypeSymbol"]
+            if "_T" in raw_sym:
+                continue
+            base_sym = strip_today_suffix(raw_sym)
+            symbol_all_dates[base_sym].append((ms_to_date_str(day["date"]), day["date"]))
 
-        for day in calendar_days:
-            raw_sym    = day["dayType"]["dayTypeSymbol"]
-            service_id = strip_today_suffix(raw_sym)
-            if service_id not in service_representative:
-                service_representative[service_id] = day["date"]
+        # Dodajemy też daty _T do calendar_dates (dotychczasowa logika)
+        service_dates_all: dict[str, list[str]] = defaultdict(list)  # będzie uzupełniony poniżej
 
-        log.info("[%s] %d typy serwisu: %s",
-                 city_name, len(service_representative), list(service_representative.keys()))
+        # Unikalne (base_sym, date_ms) do pobrania atomowego
+        unique_date_entries: list[tuple[str, int]] = []  # (base_sym, date_ms)
+        seen_date_ms: set[int] = set()
+        for sym, dates in symbol_all_dates.items():
+            for date_str, date_ms in dates:
+                if date_ms not in seen_date_ms:
+                    seen_date_ms.add(date_ms)
+                    unique_date_entries.append((sym, date_ms))
 
-        # 3. Rozkłady atomowe
-        total_calls = len(stops) * len(service_representative)
-        log.info("[%s] Pobieranie rozkładów atomowych (%d przystanków x %d typów = %d zapytań) ...",
-                 city_name, len(stops), len(service_representative), total_calls)
+        # Mapowanie date_ms → base_sym (do używania w pętli wyników)
+        date_ms_to_base_sym: dict[int, str] = {
+            date_ms: sym
+            for sym, date_ms in unique_date_entries
+        }
 
-        async def fetch_atomic(stop_symbol: str, date_ms: int, service_id: str):
+        log.info(
+            "[%s] Kalendarz: %d symboli, %d unikalnych dat do pobrania",
+            city_name, len(symbol_all_dates), len(unique_date_entries),
+        )
+
+        # ── 3. Rozkłady atomowe dla WSZYSTKICH dat (nie tylko jednego reprezentanta) ──
+        total_calls = len(stops) * len(unique_date_entries)
+        log.info(
+            "[%s] Pobieranie rozkładów atomowych (%d przystanków x %d dat = %d zapytań) ...",
+            city_name, len(stops), len(unique_date_entries), total_calls,
+        )
+
+        async def fetch_atomic(stop_symbol: str, date_ms: int, base_sym: str):
             data = await api.get("getAtomicSchedule.json", {"symbol": stop_symbol, "date": date_ms})
-            return stop_symbol, service_id, data
+            return stop_symbol, date_ms, base_sym, data
 
         atomic_tasks = [
-            fetch_atomic(s["symbol"], date_ms, sid)
-            for sid, date_ms in service_representative.items()
+            fetch_atomic(s["symbol"], date_ms, base_sym)
+            for base_sym, date_ms in unique_date_entries
             for s in stops
         ]
 
-        trips_meta:     dict[int, dict]     = {}
-        seen_orders:    dict[int, set]      = defaultdict(set)
-        stop_times_raw: dict[int, list]     = defaultdict(list)
+        # date_ms → frozenset[course_id]  – fingerprint rozkładu
+        date_fingerprint: dict[int, set[int]] = defaultdict(set)
+        # (date_ms, course_id, order) → (stop_id, dep_secs, pickup, dropoff)
+        raw_by_date: dict[int, dict] = defaultdict(lambda: {
+            "trips": {},  # course_id → meta dict
+            "seen_orders": defaultdict(set),
+            "stop_times": defaultdict(list),
+        })
 
-        completed      = 0
-        atomic_results = await asyncio.gather(*atomic_tasks, return_exceptions=True)
+        completed = 0
+        all_results = await asyncio.gather(*atomic_tasks, return_exceptions=True)
 
-        for result in atomic_results:
+        for result in all_results:
             completed += 1
-            if completed % 500 == 0 or completed == total_calls:
-                log.info("[%s] Przetworzono %d / %d odpowiedzi atomowych",
-                         city_name, completed, total_calls)
+            if completed % 1000 == 0 or completed == total_calls:
+                log.info("[%s] Przetworzono %d / %d odpowiedzi atomowych", city_name, completed, total_calls)
 
             if isinstance(result, Exception) or result is None:
                 continue
 
-            stop_symbol, service_id, data = result
+            stop_symbol, date_ms, base_sym, data = result
             if data is None or "lineSchedules" not in data:
                 continue
 
@@ -1065,9 +1098,8 @@ async def generate_city(city_cfg: dict) -> bytes:
             if stop is None:
                 continue
 
-            # stop_id = symbol przystanku (string), spójny z getStops.json
-            stop_id     = stop["symbol"]
-            on_request  = bool(stop.get("onRequest"))
+            stop_id = stop["symbol"]
+            on_request = bool(stop.get("onRequest"))
             getting_out = bool(stop.get("gettingOut"))
 
             if on_request:
@@ -1077,39 +1109,120 @@ async def generate_city(city_cfg: dict) -> bytes:
             else:
                 pickup_type, dropoff_type = 0, 0
 
+            bucket = raw_by_date[date_ms]
+
             for line_name, line_sched in data["lineSchedules"].items():
                 route_id = line_name_to_id.get(line_name, line_name)
                 for dep in line_sched["departures"]:
-                    course_id  = dep["courseId"]
-                    order      = dep["orderInCourse"]
+                    course_id = dep["courseId"]
+                    order = dep["orderInCourse"]
                     variant_id = dep["variantId"]
-                    brigade    = dep.get("brigade") or ""
+                    brigade = dep.get("brigade") or ""
 
-                    if course_id not in trips_meta:
+                    date_fingerprint[date_ms].add(course_id)
+
+                    if course_id not in bucket["trips"]:
                         headsign = (
-                            dep.get("optionalDirection")
-                            or variant_names.get(str(variant_id), "")
+                                dep.get("optionalDirection")
+                                or variant_names.get(str(variant_id), "")
                         )
-                        trips_meta[course_id] = {
-                            "trip_id":       course_id,
-                            "route_id":      route_id,
-                            "service_id":    service_id,
-                            "shape_id":      variant_id,
+                        bucket["trips"][course_id] = {
+                            "trip_id": course_id,
+                            "route_id": route_id,
+                            "shape_id": variant_id,
                             "trip_headsign": headsign,
-                            "variant_id":    variant_id,
-                            "brigade":       brigade,
+                            "variant_id": variant_id,
+                            "brigade": brigade,
+                            "date_ms": date_ms,  # ← potrzebne do przypisania service_id
+                            "base_sym": base_sym,
                         }
 
-                    if order not in seen_orders[course_id]:
-                        seen_orders[course_id].add(order)
-                        stop_times_raw[course_id].append((
+                    if order not in bucket["seen_orders"][course_id]:
+                        bucket["seen_orders"][course_id].add(order)
+                        bucket["stop_times"][course_id].append((
                             order, stop_id, dep["scheduledDepartureSec"],
                             pickup_type, dropoff_type,
                         ))
 
-        log.info("[%s] Zebrano %d kursów, %d wpisów stop_times",
-                 city_name, len(trips_meta),
-                 sum(len(v) for v in stop_times_raw.values()))
+        # ── Grupowanie dat w service_id na podstawie fingerprintu ─────────────────
+        # base_sym → list[frozenset]  (grupy już znane)
+        sym_groups: dict[str, list[frozenset]] = defaultdict(list)
+        # date_ms → service_id (wynikowe przypisanie)
+        date_to_service_id: dict[int, str] = {}
+
+        for base_sym, dates in symbol_all_dates.items():
+            for date_str, date_ms in dates:
+                fp = frozenset(date_fingerprint.get(date_ms, set()))
+
+                # Szukamy pasującej grupy
+                matched_idx = None
+                for idx, existing_fp in enumerate(sym_groups[base_sym]):
+                    if existing_fp == fp:
+                        matched_idx = idx
+                        break
+
+                if matched_idx is None:
+                    matched_idx = len(sym_groups[base_sym])
+                    sym_groups[base_sym].append(fp)
+
+                # Numeracja: pierwsza grupa → base_sym, kolejne → base_sym_2, _3 …
+                if matched_idx == 0:
+                    sid = base_sym
+                else:
+                    sid = f"{base_sym}_{matched_idx + 1}"
+
+                date_to_service_id[date_ms] = sid
+
+        # calendar_dates.txt: wszystkie daty (w tym _T) → service_id
+        service_dates: dict[str, list[str]] = defaultdict(list)
+        for day in calendar_days:
+            raw_sym = day["dayType"]["dayTypeSymbol"]
+            base_sym = strip_today_suffix(raw_sym)
+            date_str = ms_to_date_str(day["date"])
+            date_ms = day["date"]
+            # Dla dat _T używamy base_sym (nie mamy dla nich fingerprintu,
+            # traktujemy je jak reprezentatywną grupę bazową)
+            sid = date_to_service_id.get(date_ms, base_sym)
+            service_dates[sid].append(date_str)
+
+        unique_sids = {sid for sids in service_dates.values() for sid in []}
+        log.info(
+            "[%s] Wynikowe service_id: %s",
+            city_name,
+            sorted(service_dates.keys()),
+        )
+
+        # Klucz: prefixed trip_id = "{sid}_{course_id}" (string).
+        # Dzięki temu ten sam course_id pojawiający się w różnych grupach
+        # service_id (np. P_3 i P_5) tworzy osobne rekordy w GTFS.
+        trips_meta: dict[str, dict] = {}
+        seen_orders: dict[str, set] = defaultdict(set)
+        stop_times_raw: dict[str, list] = defaultdict(list)
+
+        for date_ms, bucket in raw_by_date.items():
+            sid = date_to_service_id.get(date_ms, date_ms_to_base_sym.get(date_ms, "?"))
+            for course_id, meta in bucket["trips"].items():
+                tid = f"{sid}_{course_id}"
+                if tid not in trips_meta:
+                    trips_meta[tid] = {
+                        **meta,
+                        "trip_id": tid,  # nadpisujemy surowy course_id
+                        "course_id": course_id,  # zachowujemy oryginał do getRealCourse
+                        "service_id": sid,
+                    }
+            for course_id, entries in bucket["stop_times"].items():
+                sid_for_date = date_to_service_id.get(date_ms, date_ms_to_base_sym.get(date_ms, "?"))
+                tid = f"{sid_for_date}_{course_id}"
+                for entry in entries:
+                    order = entry[0]
+                    if order not in seen_orders[tid]:
+                        seen_orders[tid].add(order)
+                        stop_times_raw[tid].append(entry)
+
+        log.info(
+            "[%s] Zebrano %d kursów, %d wpisów stop_times",
+            city_name, len(trips_meta), sum(len(v) for v in stop_times_raw.values()),
+        )
 
         # 4. Shapes + nagłówki wariantów
         variant_ids = sorted({t["variant_id"] for t in trips_meta.values()})
@@ -1154,28 +1267,33 @@ async def generate_city(city_cfg: dict) -> bytes:
         # Mapowanie symbol → symbol (stop_id = symbol w całym feedzie)
         symbol_to_stop_id: dict[str, str] = {s["symbol"]: s["symbol"] for s in stops}
 
-        real_course_tasks   = [api.get("getRealCourse.json", {"courseId": cid}) for cid in trips_meta]
+        # trips_meta jest teraz indeksowane prefixed trip_id; courseId do API
+        # to oryginalny course_id przechowywany w meta["course_id"].
+        real_course_tasks = [
+            api.get("getRealCourse.json", {"courseId": t["course_id"]})
+            for t in trips_meta.values()
+        ]
         real_course_results = await asyncio.gather(*real_course_tasks, return_exceptions=True)
 
         patched = 0
-        for course_id, result in zip(trips_meta.keys(), real_course_results):
+        for tid, result in zip(trips_meta.keys(), real_course_results):
             if isinstance(result, Exception) or result is None:
                 continue
             real_course = result.get("realCourse")
             if not real_course:
                 continue
             for stopping in (real_course.get("stoppings") or []):
-                order    = stopping["orderInCourse"]
-                symbol   = stopping["stopPointSymbol"]
+                order = stopping["orderInCourse"]
+                symbol = stopping["stopPointSymbol"]
                 dep_secs = stopping["scheduledDepartureSec"]
-                if order in seen_orders[course_id]:
+                if order in seen_orders[tid]:
                     continue
                 stop_id = symbol_to_stop_id.get(symbol)
                 if stop_id is None:
-                    log.debug("[%s] getRealCourse: nieznany symbol %s (kurs %s)", city_name, symbol, course_id)
+                    log.debug("[%s] getRealCourse: nieznany symbol %s (kurs %s)", city_name, symbol, tid)
                     continue
-                seen_orders[course_id].add(order)
-                stop_times_raw[course_id].append((order, stop_id, dep_secs, 0, 0))
+                seen_orders[tid].add(order)
+                stop_times_raw[tid].append((order, stop_id, dep_secs, 0, 0))
                 patched += 1
 
         log.info("[%s] Uzupełniono %d wpisów stop_times z getRealCourse", city_name, patched)
@@ -1253,20 +1371,20 @@ async def generate_city(city_cfg: dict) -> bytes:
     cal_rows.sort(key=lambda r: (r["date"], r["service_id"]))
     cal_csv = write_gtfs_csv(cal_rows, ["service_id", "date", "exception_type"])
 
-    # trips.txt
+    # trips.txt – bez zmian strukturalnych, service_id pochodzi z trips_meta
     trips_rows = []
     for t in trips_meta.values():
-        brigade    = t["brigade"]
-        service_id = t["service_id"]
-        block_id   = block_id_lookup.get((service_id, brigade), brigade) if brigade else ""
+        brigade = t["brigade"]
+        service_id = t["service_id"]  # ← teraz może być "P", "P_2", "P_3" ...
+        block_id = block_id_lookup.get((service_id, brigade), brigade) if brigade else ""
         trips_rows.append({
-            "route_id":      t["route_id"],
-            "service_id":    service_id,
-            "trip_id":       t["trip_id"],
+            "route_id": t["route_id"],
+            "service_id": service_id,
+            "trip_id": t["trip_id"],
             "trip_headsign": t["trip_headsign"],
-            "direction_id":  t.get("direction_id", ""),
-            "shape_id":      t["shape_id"],
-            "block_id":      block_id,
+            "direction_id": t.get("direction_id", ""),
+            "shape_id": t["shape_id"],
+            "block_id": block_id,
         })
     trips_csv = write_gtfs_csv(
         trips_rows,

@@ -1460,6 +1460,148 @@
             flex-shrink: 0;
             color: rgba(255,255,255,0.65);
         }
+
+
+        /* ── Search overlay ── */
+.search-results-scroll {
+    max-height: 52vh;
+    overflow-y: auto;
+    padding-right: 2px;
+    margin-top: 10px;
+}
+.search-results-scroll::-webkit-scrollbar { width: 4px; }
+.search-results-scroll::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
+
+.search-input-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(40, 45, 50, 0.95);
+    border-radius: 12px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+}
+.search-input-row svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    color: #aaa;
+}
+#search-input {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-family: 'Roboto', sans-serif;
+    font-size: 16px;
+    font-weight: 400;
+    color: #FFFFFF;
+}
+#search-input::placeholder { color: #bbb; }
+#search-clear-btn {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 16px;
+    color: #bbb;
+    line-height: 1;
+    display: none;
+}
+#search-clear-btn.visible { display: block; }
+
+.search-hint {
+    font-family: 'Roboto', sans-serif;
+    font-size: 14px;
+    color: #aaa;
+    text-align: center;
+    padding: 16px 8px 8px 8px;
+    line-height: 1.6;
+}
+.search-hint b { color: #888; }
+
+.search-section-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #999;
+    padding: 0 2px;
+    margin: 12px 0 6px 0;
+}
+.search-section-title:first-child { margin-top: 0; }
+
+.search-result-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    border: none;
+    background: rgba(40, 45, 50, 0.95);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 5px;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s;
+}
+.search-result-btn:hover {
+    background: #3a4047;
+    transform: translateY(-2px); }
+.search-result-btn:active { background: rgba(0,0,0,0.12); }
+
+.search-result-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 5px 9px;
+    border-radius: 8px;
+    font-family: 'Roboto', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.search-result-badge-icon {
+    width: 13px;
+    height: 13px;
+    background: rgba(255,255,255,0.9);
+    flex-shrink: 0;
+}
+.search-result-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.search-result-name {
+    font-family: 'Roboto', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    color: #FFFFFF;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+}
+.search-result-sub {
+    font-family: 'Roboto', sans-serif;
+    font-size: 12px;
+    color: #888;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+}
+.search-no-results {
+    font-family: 'Roboto', sans-serif;
+    font-size: 14px;
+    color: #aaa;
+    text-align: center;
+    padding: 20px 8px;
+}
     </style>
 </head>
 <body class="city-map-page">
@@ -1471,7 +1613,7 @@
         <div class="circle-btn-mniejszy" onclick="openMenu()">
             <i data-lucide="menu"></i>
         </div>
-        <div class="circle-btn-mniejszy">
+        <div class="circle-btn-mniejszy" onclick="openSearch()">
             <i data-lucide="search"></i>
         </div>
     </div>
@@ -1863,6 +2005,36 @@
         <!-- Kursy -->
         <div class="brigade-detail-scroll" id="brigade-detail-scroll">
             <div class="vehicle-no-data">Ładowanie kursów…</div>
+        </div>
+    </div>
+</div>
+
+<!-- ══ SEARCH OVERLAY ══ -->
+<div id="search-overlay" class="overlay-hidden">
+    <div class="selection-card">
+        <p class="choose-text"><b>Wyszukaj</b></p>
+        <div class="search-input-row">
+            <i data-lucide="search"></i>
+            <input id="search-input" type="text"
+                   placeholder="Linia, przystanek, numer pojazdu…"
+                   autocomplete="off" inputmode="search" spellcheck="false">
+            <button id="search-clear-btn" type="button" aria-label="Wyczyść">✕</button>
+        </div>
+        <div class="search-results-scroll" id="search-results-scroll">
+            <div class="search-hint" id="search-hint">
+                Wpisz nazwę linii, przystanku lub numer pojazdu, aby zobaczyć wyniki.<br>
+                Możesz szukać po:<br>
+                <b>numerze linii</b> (np. 15, N1)<br>
+                <b>nazwie przystanku</b> (np. Rynek)<br>
+                <b>numerze pojazdu</b> (np. 1501)
+            </div>
+            <div id="search-results"></div>
+        </div>
+        <div style="margin-top:12px;">
+            <div class="city-button" onclick="closeSearch()">
+                <span class="menu-icon"><i data-lucide="arrow-left"></i></span>
+                <div class="city-content"><div class="city-name-line">Powrót</div></div>
+            </div>
         </div>
     </div>
 </div>
@@ -2347,7 +2519,7 @@ async function refreshVehicles() {
             if (v.bearing != null) vehicleBearings[key] = v.bearing;
             const { html, bg } = buildVehicleMarkerHTML(routeShortName, tripShortName, blockId, v.display_vehicle_id, routeType, colorHex, effectiveBearing, s, v.positionType === 'estimated', delaySeconds);
             const dotHtml = buildVehicleDotHTML(bg), fullMode = mapa.getZoom() > 14, displayHtml = fullMode ? html : dotHtml;
-            const markerMeta = { feedName: v.feed_name, vehicleId: v.vehicle_id ?? null, displayVehicleId: v.display_vehicle_id ?? null, tripId: v.trip_id ?? null, routeId: effectiveRouteId, routeShortName, routeColor: colorHex, routeType, headsign: null, positionType: v.positionType ?? null };
+            const markerMeta = { feedName: v.feed_name, vehicleId: v.vehicle_id ?? null, displayVehicleId: v.display_vehicle_id ?? null, tripId: v.trip_id ?? null, routeId: effectiveRouteId, routeShortName, tripShortName: tripShortName ?? null, routeColor: colorHex, routeType, headsign: null, positionType: v.positionType ?? null };
             vehicleMarkerMeta[key] = { fullHtml: html, dotHtml, meta: markerMeta, speed: v.speed ?? 0, timestamp: v.timestamp ?? null };
             if (vehicleMarkers[key]) {
                 const metaWrap = vehicleMarkerMeta[key];
@@ -4352,6 +4524,258 @@ document.getElementById('brigade-detail-back-btn').addEventListener('click', () 
     _hide('brigade-detail-overlay');
     const { feedName, routeId, selectedDate } = _brigadesState;
     if (feedName && routeId) openBrigadesOverlay(feedName, routeId, selectedDate);
+});
+
+// ════════════════════════════════════════
+//  WYSZUKIWARKA (client-side)
+// ════════════════════════════════════════
+
+let _searchDebounce = null;
+
+function openSearch() {
+    _show('search-overlay');
+    lucide.createIcons();
+    // Krótkie opóźnienie bo overlay musi się wyrenderować przed focusem
+    setTimeout(() => {
+        const input = document.getElementById('search-input');
+        if (input) input.focus();
+    }, 80);
+}
+function closeSearch() {
+    _hide('search-overlay');
+    _resetSearch();
+}
+
+function _resetSearch() {
+    const input = document.getElementById('search-input');
+    const results = document.getElementById('search-results');
+    const hint = document.getElementById('search-hint');
+    const clearBtn = document.getElementById('search-clear-btn');
+    if (input) input.value = '';
+    if (results) results.innerHTML = '';
+    if (hint) hint.style.display = 'block';
+    if (clearBtn) clearBtn.classList.remove('visible');
+}
+
+// ── Silnik wyszukiwania ──────────────────────────────────────────────────────
+
+function _normalize(str) {
+    return String(str || '').toLowerCase()
+        .replace(/ą/g,'a').replace(/ć/g,'c').replace(/ę/g,'e')
+        .replace(/ł/g,'l').replace(/ń/g,'n').replace(/ó/g,'o')
+        .replace(/ś/g,'s').replace(/ź/g,'z').replace(/ż/g,'z')
+        .trim();
+}
+
+function _matchScore(haystack, needle) {
+    // Zwraca: 2 = prefix match, 1 = contains, 0 = brak
+    const h = _normalize(haystack), n = _normalize(needle);
+    if (!h || !n) return 0;
+    if (h === n) return 3;
+    if (h.startsWith(n)) return 2;
+    if (h.includes(n)) return 1;
+    return 0;
+}
+
+function _searchRoutes(q) {
+    const results = [];
+    for (const [key, route] of Object.entries(routeDetailsCache)) {
+        const scoreShort = _matchScore(route.route_short_name, q);
+        const scoreLong  = _matchScore(route.route_long_name, q);
+        const score = Math.max(scoreShort, scoreLong);
+        if (score === 0) continue;
+        const [feedName] = key.split(':');
+        results.push({ type: 'route', score, feedName, route });
+    }
+    // Deduplikuj po route_id+feed (routeDetailsCache może mieć duplikaty)
+    const seen = new Set();
+    return results
+        .filter(r => { const k = `${r.feedName}:${r.route.route_id}`; if (seen.has(k)) return false; seen.add(k); return true; })
+        .sort((a, b) => b.score - a.score ||
+            String(a.route.route_short_name).localeCompare(String(b.route.route_short_name), 'pl', { numeric: true }));
+}
+
+function _searchStops(q) {
+    const results = [];
+    for (const [sid, meta] of Object.entries(STOP_META_BY_ID)) {
+        const scoreName = _matchScore(meta.name, q);
+        const scoreCode = _matchScore(meta.code, q);
+        const scoreId   = _matchScore(sid, q);
+        const score = Math.max(scoreName, scoreCode, scoreId);
+        if (score === 0) continue;
+        results.push({ type: 'stop', score, meta });
+    }
+    return results.sort((a, b) => b.score - a.score ||
+        String(a.meta.name).localeCompare(String(b.meta.name), 'pl'));
+}
+
+function _searchVehicles(q) {
+    const results = [];
+    for (const [key, wrap] of Object.entries(vehicleMarkerMeta)) {
+        const meta = wrap.meta; if (!meta) continue;
+        const scoreVehicle   = _matchScore(meta.displayVehicleId, q);
+        const scoreVehicle2  = _matchScore(meta.vehicleId, q);
+        const scoreRoute     = _matchScore(meta.routeShortName, q);
+        const scoreTripShort = _matchScore(meta.tripShortName, q);
+        const score = Math.max(scoreVehicle, scoreVehicle2, scoreRoute, scoreTripShort);
+        if (score === 0) continue;
+        results.push({ type: 'vehicle', score, markerKey: key, meta, speed: wrap.speed, timestamp: wrap.timestamp });
+    }
+    return results.sort((a, b) => b.score - a.score ||
+        String(a.meta.routeShortName).localeCompare(String(b.meta.routeShortName), 'pl', { numeric: true }));
+}
+
+// ── Renderowanie wyników ─────────────────────────────────────────────────────
+
+function _renderSearchSection(title, items) {
+    if (items.length === 0) return '';
+    return `<div class="search-section-title">${title}</div>${items.join('')}`;
+}
+
+function _renderRouteResult(r) {
+    const route = r.route, feedName = r.feedName;
+    const routeType = route.route_type != null ? Number(route.route_type) : 3;
+    const cfg = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
+    const bg = route.color ? `#${route.color}` : cfg.color;
+    const iconUrl = window.STATIC_URL + 'img/' + cfg.icon;
+    const name = route.route_short_name || route.route_id || '?';
+    const longName = route.route_long_name ? `<div class="search-result-sub">${route.route_long_name}</div>` : `<div class="search-result-sub">${cfg.name}</div>`;
+    return `<button class="search-result-btn" type="button"
+        onclick="closeSearch(); openRouteViewDirect('${feedName}', '${route.route_id}'); mapa.flyTo({center:[${route.lon||0},${route.lat||0}], zoom: Math.max(mapa.getZoom(), 12), duration: 800});">
+        <div class="search-result-badge" style="background:${bg};">
+            <div class="search-result-badge-icon"
+                 style="-webkit-mask:url('${iconUrl}') no-repeat center/contain;mask:url('${iconUrl}') no-repeat center/contain;"></div>
+            ${name}
+        </div>
+        <div class="search-result-info">
+            <div class="search-result-name">Linia ${name}</div>
+            ${longName}
+        </div>
+    </button>`;
+}
+
+function _renderStopResult(r) {
+    const meta = r.meta;
+    const routeType = meta.routeTypes?.[0] ?? 3;
+    const cfg = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
+    const iconUrl = window.STATIC_URL + 'img/' + cfg.icon;
+    const label = meta.code ? `${meta.name} (${meta.code})` : meta.name;
+    const sub = meta.routeTypes
+        ? [...new Set(meta.routeTypes)].map(t => (ROUTE_TYPE_CONFIG[t] || ROUTE_TYPE_CONFIG[3]).name).join(', ')
+        : 'Przystanek';
+    return `<button class="search-result-btn" type="button"
+        onclick="closeSearch(); openStopViewFromId('${meta.id}'); mapa.flyTo({center:[${meta.lon},${meta.lat}], zoom: Math.max(mapa.getZoom(), 16), duration: 800});">
+        <div class="search-result-badge" style="background:#2C95D0;">
+            <div class="search-result-badge-icon"
+                 style="-webkit-mask:url('${iconUrl}') no-repeat center/contain;mask:url('${iconUrl}') no-repeat center/contain;"></div>
+        </div>
+        <div class="search-result-info">
+            <div class="search-result-name">${label}</div>
+            <div class="search-result-sub">${sub}</div>
+        </div>
+    </button>`;
+}
+
+function _renderVehicleResult(r) {
+    const meta = r.meta, markerKey = r.markerKey;
+    const routeType = meta.routeType ?? 3;
+    const cfg = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
+    const bg = meta.routeColor ? `#${meta.routeColor}` : cfg.color;
+    const iconUrl = window.STATIC_URL + 'img/' + cfg.icon;
+    const lineName = meta.routeShortName || '?';
+    const vehicleNum = meta.displayVehicleId || meta.vehicleId || null;
+    const tripShort = meta.tripShortName || null;
+
+    // Badge: "8/147" lub "8 N1/147" (linia + opcjonalnie trip_short_name + numer taborowy)
+    const lineAndTrip = tripShort ? `${lineName} ${tripShort}` : lineName;
+    const badgeLabel = vehicleNum ? `${lineAndTrip}/${vehicleNum}` : lineAndTrip;
+
+    // Nazwa główna: headsign jeśli dostępny, fallback do "Pojazd #147"
+    const mainName = meta.headsign
+        ? meta.headsign
+        : (vehicleNum ? `Pojazd #${vehicleNum}` : `Pojazd (${lineName})`);
+
+    // Podtytuł: typ pojazdu
+    const sub = cfg.name;
+
+    const pos = vehiclePositions[markerKey];
+    const flyArgs = pos
+        ? `mapa.flyTo({center:[${pos.lon},${pos.lat}], zoom: Math.max(mapa.getZoom(), 15), duration: 800});`
+        : '';
+
+    return `<button class="search-result-btn" type="button"
+        onclick="closeSearch(); openVehicleViewFromMarker('${markerKey}'); ${flyArgs}">
+        <div class="search-result-badge" style="background:${bg};">
+            <div class="search-result-badge-icon"
+                 style="-webkit-mask:url('${iconUrl}') no-repeat center/contain;mask:url('${iconUrl}') no-repeat center/contain;"></div>
+            ${badgeLabel}
+        </div>
+        <div class="search-result-info">
+            <div class="search-result-name">${mainName}</div>
+            <div class="search-result-sub">${sub}</div>
+        </div>
+    </button>`;
+}
+
+function _doSearch(q) {
+    const hint    = document.getElementById('search-hint');
+    const results = document.getElementById('search-results');
+    if (!results) return;
+
+    if (q.length < 1) {
+        results.innerHTML = '';
+        if (hint) hint.style.display = 'block';
+        return;
+    }
+    if (hint) hint.style.display = 'none';
+
+    const vehicles = _searchVehicles(q);
+    const routes   = _searchRoutes(q);
+    const stops    = _searchStops(q);
+
+    if (vehicles.length === 0 && routes.length === 0 && stops.length === 0) {
+        results.innerHTML = `<div class="search-no-results">Nie znaleziono wyników dla „${q}"</div>`;
+        return;
+    }
+
+    const html = [
+        _renderSearchSection('Pojazdy', vehicles.map(_renderVehicleResult)),
+        _renderSearchSection('Linie', routes.map(_renderRouteResult)),
+        _renderSearchSection('Przystanki', stops.map(_renderStopResult)),
+    ].join('');
+
+    results.innerHTML = html;
+}
+
+// ── Eventy inputa ────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+    const input    = document.getElementById('search-input');
+    const clearBtn = document.getElementById('search-clear-btn');
+    if (!input || !clearBtn) return;
+
+    input.addEventListener('input', () => {
+        const q = input.value.trim();
+        clearBtn.classList.toggle('visible', q.length > 0);
+        clearTimeout(_searchDebounce);
+        _searchDebounce = setTimeout(() => _doSearch(q), 180);
+    });
+
+    clearBtn.addEventListener('click', () => {
+        input.value = '';
+        clearBtn.classList.remove('visible');
+        _doSearch('');
+        input.focus();
+    });
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeSearch();
+    });
+});
+
+// ── Zamknięcie kliknięciem tła ───────────────────────────────────────────────
+document.getElementById('search-overlay')?.addEventListener('click', (e) => {
+    if (e.target === document.getElementById('search-overlay')) closeSearch();
 });
 
 </script>
