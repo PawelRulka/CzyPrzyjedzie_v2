@@ -4641,7 +4641,7 @@ function _renderRouteResult(r) {
     const name = route.route_short_name || route.route_id || '?';
     const longName = route.route_long_name ? `<div class="search-result-sub">${route.route_long_name}</div>` : `<div class="search-result-sub">${cfg.name}</div>`;
     return `<button class="search-result-btn" type="button"
-        onclick="closeSearch(); openRouteViewDirect('${feedName}', '${route.route_id}'); mapa.flyTo({center:[${route.lon||0},${route.lat||0}], zoom: Math.max(mapa.getZoom(), 12), duration: 800});">
+        onclick="closeSearch(); openRouteViewDirect('${feedName}', '${route.route_id}');">
         <div class="search-result-badge" style="background:${bg};">
             <div class="search-result-badge-icon"
                  style="-webkit-mask:url('${iconUrl}') no-repeat center/contain;mask:url('${iconUrl}') no-repeat center/contain;"></div>
