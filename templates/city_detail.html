@@ -1602,6 +1602,458 @@
     text-align: center;
     padding: 20px 8px;
 }
+
+
+/* ── Ulubione przystanki ── */
+.fav-stops-scroll {
+    max-height: 70vh;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+.fav-stops-scroll::-webkit-scrollbar { width: 4px; }
+.fav-stops-scroll::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
+
+.fav-stop-card {
+    background: rgba(40, 45, 50, 0.95);
+    border-radius: 14px;
+    padding: 12px 14px 10px 14px;
+    margin-bottom: 10px;
+}
+.fav-stop-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+.fav-stop-card-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 5px 8px;
+    border-radius: 8px;
+    background: #2C95D0;
+    flex-shrink: 0;
+}
+.fav-stop-card-badge-icon {
+    width: 15px;
+    height: 15px;
+    background: rgba(0,30,60,0.75);
+    flex-shrink: 0;
+}
+.fav-stop-card-title {
+    font-family: 'Roboto', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: #FFFFFF;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.3;
+}
+.fav-stop-card-edit-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    border: none;
+    background: rgba(0,0,0,0.06);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    color: #888;
+    transition: background 0.15s;
+}
+.fav-stop-card-edit-btn:hover { background: rgba(0,0,0,0.12); }
+.fav-stop-card-edit-btn svg { width: 14px; height: 14px; }
+
+.fav-stop-departure-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    border-top: 1px solid rgba(0,0,0,0.06);
+    cursor: pointer;
+    border-radius: 6px;
+    margin: 0 -4px;
+    padding-left: 4px;
+    padding-right: 4px;
+    transition: background 0.13s;
+}
+.fav-stop-departure-row:hover { background: rgba(0,0,0,0.04); }
+.fav-stop-departure-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 7px;
+    border-radius: 7px;
+    font-family: 'Roboto', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+.fav-stop-departure-badge-icon {
+    width: 12px;
+    height: 12px;
+    background: rgba(255,255,255,0.9);
+    flex-shrink: 0;
+}
+.fav-stop-departure-headsign {
+    font-family: 'Roboto', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    color: #FFFFFF;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.fav-stop-departure-time {
+    font-family: 'Roboto', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    color: #222;
+    white-space: nowrap;
+    text-align: right;
+    flex-shrink: 0;
+}
+.fav-stop-departure-eta {
+    font-family: 'Roboto', sans-serif;
+    font-size: 12px;
+    color: #888;
+    white-space: nowrap;
+    text-align: right;
+    flex-shrink: 0;
+    min-width: 44px;
+}
+.fav-stop-card-loading {
+    font-family: 'Roboto', sans-serif;
+    font-size: 13px;
+    color: #aaa;
+    padding: 4px 0 2px 0;
+}
+.fav-stop-card-empty {
+    font-family: 'Roboto', sans-serif;
+    font-size: 13px;
+    color: #bbb;
+    padding: 4px 0 2px 0;
+}
+.fav-stops-empty-hint {
+    font-family: 'Roboto', sans-serif;
+    font-size: 14px;
+    color: #aaa;
+    text-align: center;
+    padding: 20px 8px;
+    line-height: 1.6;
+}
+
+#fav-config-overlay.overlay-visible {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ── Fav config overlay ── */
+.fav-config-card {
+    width: min(480px, calc(100vw - 28px));
+    background: rgba(22, 24, 28, 0.96);
+    border-radius: 18px;
+    box-shadow: 0 18px 45px rgba(0,0,0,0.72);
+    padding: 20px 18px 16px 18px;
+}
+.fav-config-title {
+    font-family: 'Roboto', sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: #E7E8E8;
+    margin-bottom: 14px;
+}
+.fav-config-section-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: rgba(255,255,255,0.45);
+    margin: 12px 0 6px 0;
+}
+.fav-config-options {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+.fav-config-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 2px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    font-family: 'Roboto', sans-serif;
+    font-size: 14px;
+    color: rgba(255,255,255,0.85);
+    user-select: none;
+}
+.fav-config-option:hover { background: rgba(255,255,255,0.08); }
+.fav-config-option.active {
+    border-color: #2C95D0;
+    background: rgba(44,149,208,0.12);
+    color: #fff;
+}
+.fav-config-option-radio {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.25);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: border-color 0.15s;
+}
+.fav-config-option.active .fav-config-option-radio { border-color: #2C95D0; }
+.fav-config-option-radio-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #2C95D0;
+    display: none;
+}
+.fav-config-option.active .fav-config-option-radio-dot { display: block; }
+
+/* Sekcja wartości (linie / kierunki / przystanki) */
+.fav-config-value-section { margin-top: 4px; }
+
+/* Przewijane przyciski linii */
+.fav-config-routes-scroll {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 6px 2px 8px 2px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+.fav-config-routes-scroll::-webkit-scrollbar { height: 4px; }
+.fav-config-routes-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.15);
+    border-radius: 4px;
+}
+.fav-config-route-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    border-radius: 10px;
+    font-family: 'Roboto', sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+    color: #fff;
+    cursor: pointer;
+    flex-shrink: 0;
+    border: 2px solid transparent;
+    transition: filter 0.12s, border-color 0.12s, opacity 0.12s;
+    user-select: none;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.35);
+}
+.fav-config-route-pill--inactive {
+    filter: grayscale(0.85) brightness(0.55);
+    opacity: 0.7;
+}
+.fav-config-route-pill-icon {
+    width: 13px; height: 13px;
+    background: rgba(255,255,255,0.9);
+    flex-shrink: 0;
+}
+
+/* Select (kierunki / przystanki) */
+.fav-config-select {
+    width: 100%;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-family: 'Roboto', sans-serif;
+    font-size: 14px;
+    color: rgba(255,255,255,0.92);
+    outline: none;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+    margin-top: 2px;
+}
+.fav-config-select option {
+    background: #1a1d22;
+    color: rgba(255,255,255,0.92);
+}
+.fav-config-select:focus {
+    border-color: rgba(44,149,208,0.5);
+}
+
+/* Multi-select lista dla kierunków/przystanków */
+.fav-config-multicheck {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 160px;
+    overflow-y: auto;
+    margin-top: 4px;
+    padding-right: 2px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+.fav-config-multicheck::-webkit-scrollbar { width: 4px; }
+.fav-config-multicheck::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.15);
+    border-radius: 4px;
+}
+.fav-config-check-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    cursor: pointer;
+    transition: background 0.13s;
+    user-select: none;
+}
+.fav-config-check-item:hover { background: rgba(255,255,255,0.08); }
+.fav-config-check-item.active {
+    background: rgba(44,149,208,0.12);
+    border-color: rgba(44,149,208,0.35);
+}
+.fav-config-check-box {
+    width: 16px; height: 16px;
+    border-radius: 4px;
+    border: 2px solid rgba(255,255,255,0.25);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: border-color 0.13s, background 0.13s;
+}
+.fav-config-check-item.active .fav-config-check-box {
+    border-color: #2C95D0;
+    background: #2C95D0;
+}
+.fav-config-check-tick {
+    display: none;
+    color: #fff;
+    font-size: 10px;
+    line-height: 1;
+    font-weight: 700;
+}
+.fav-config-check-item.active .fav-config-check-tick { display: block; }
+.fav-config-check-label {
+    font-family: 'Roboto', sans-serif;
+    font-size: 13px;
+    color: rgba(255,255,255,0.85);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+.fav-config-check-item.active .fav-config-check-label { color: #fff; }
+
+.fav-config-loading {
+    font-family: 'Roboto', sans-serif;
+    font-size: 13px;
+    color: rgba(255,255,255,0.35);
+    padding: 8px 2px;
+}
+
+.fav-config-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    gap: 10px;
+}
+.fav-config-btn {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-family: 'Roboto', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    padding: 8px 12px;
+    border-radius: 10px;
+    transition: background 0.15s;
+}
+.fav-config-btn--delete { color: #FF6966; }
+.fav-config-btn--cancel { color: rgba(255,255,255,0.45); }
+.fav-config-btn--save   { color: #2C95D0; }
+.fav-config-btn:hover   { background: rgba(255,255,255,0.07); }
+
+/* ── Fav config multi-select z plusem ── */
+.fav-config-select-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+}
+.fav-config-select-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.fav-config-select-row .fav-config-select {
+    flex: 1;
+    margin-top: 0;
+}
+.fav-config-select-remove-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    border: none;
+    background: rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.45);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.13s, color 0.13s;
+}
+.fav-config-select-remove-btn:hover {
+    background: rgba(255,80,80,0.18);
+    color: #FF6966;
+}
+.fav-config-add-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    padding: 7px 10px;
+    border-radius: 9px;
+    border: 1px dashed rgba(255,255,255,0.15);
+    background: transparent;
+    color: rgba(255,255,255,0.45);
+    font-family: 'Roboto', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.13s, color 0.13s, border-color 0.13s;
+    width: 100%;
+}
+.fav-config-add-btn:hover {
+    background: rgba(255,255,255,0.05);
+    color: rgba(255,255,255,0.75);
+    border-color: rgba(255,255,255,0.28);
+}
+
     </style>
 </head>
 <body class="city-map-page">
@@ -1624,7 +2076,7 @@
         <div class="circle-btn-mniejszy" onclick="mapa.zoomOut()">
             <i data-lucide="minus"></i>
         </div>
-        <div class="circle-btn-mniejszy">
+        <div class="circle-btn-mniejszy" onclick="openFavStops()">
             <i data-lucide="star"></i>
         </div>
     </div>
@@ -1857,6 +2309,17 @@
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
+                <div class="setting-item">
+                    <span class="setting-label">Liczba odjazdów na ulubionym przystanku</span>
+                    <select id="s-fav-departures-count"
+                            onchange="saveSetting('favDeparturesCount', parseInt(this.value))"
+                            style="border:none;background:rgba(0,0,0,0.06);border-radius:8px;padding:5px 8px;font-family:'Roboto',sans-serif;font-size:13px;cursor:pointer;color:#FFFFFF;">
+                        <option value="3">3</option>
+                        <option value="5">5</option>
+                        <option value="8">8</option>
+                        <option value="10">10</option>
+                    </select>
+                </div>
             </div>
             <div class="settings-section">
                 <div class="settings-section-title">Zachowanie aplikacji</div>
@@ -2039,6 +2502,68 @@
     </div>
 </div>
 
+
+<!-- ══ ULUBIONE PRZYSTANKI OVERLAY ══ -->
+<div id="fav-stops-overlay" class="overlay-hidden">
+    <div class="selection-card">
+        <p class="choose-text"><b>Ulubione przystanki</b></p>
+        <div class="fav-stops-scroll" id="fav-stops-list">
+            <div class="fav-stops-empty-hint" id="fav-stops-empty">
+                Nie masz jeszcze ulubionych przystanków.<br>
+                Otwórz przystanek na mapie i kliknij <b>★</b>, aby dodać.
+            </div>
+        </div>
+        <div style="margin-top:12px;">
+            <div class="city-button" onclick="closeFavStops()">
+                <span class="menu-icon"><i data-lucide="arrow-left"></i></span>
+                <div class="city-content"><div class="city-name-line">Powrót</div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══ FAV CONFIG OVERLAY ══ -->
+<div id="fav-config-overlay" class="overlay-hidden" style="z-index:600;">
+    <div class="fav-config-card">
+        <div class="fav-config-title" id="fav-config-title">Ulubiony przystanek</div>
+
+        <div class="fav-config-section-label">Pokaż odjazdy dla</div>
+        <div class="fav-config-options" id="fav-config-options">
+            <div class="fav-config-option" data-mode="all">
+                <div class="fav-config-option-radio"><div class="fav-config-option-radio-dot"></div></div>
+                Wszystkie odjazdy
+            </div>
+            <div class="fav-config-option" data-mode="route">
+                <div class="fav-config-option-radio"><div class="fav-config-option-radio-dot"></div></div>
+                Wybrane linie
+            </div>
+            <div class="fav-config-option" data-mode="headsign">
+                <div class="fav-config-option-radio"><div class="fav-config-option-radio-dot"></div></div>
+                Wybrane kierunki (headsign)
+            </div>
+            <div class="fav-config-option" data-mode="stop">
+                <div class="fav-config-option-radio"><div class="fav-config-option-radio-dot"></div></div>
+                Odjazdy w kierunku przystanku
+            </div>
+        </div>
+
+        <div id="fav-config-value-section" class="fav-config-value-section" style="display:none;">
+            <div class="fav-config-section-label" id="fav-config-value-label">Linie</div>
+            <div id="fav-config-value-body">
+                <div class="fav-config-loading">Ładowanie…</div>
+            </div>
+        </div>
+
+        <div class="fav-config-actions">
+            <button class="fav-config-btn fav-config-btn--delete" id="fav-config-delete-btn" type="button">Usuń</button>
+            <div style="display:flex;gap:4px;">
+                <button class="fav-config-btn fav-config-btn--cancel" id="fav-config-cancel-btn" type="button">Anuluj</button>
+                <button class="fav-config-btn fav-config-btn--save" id="fav-config-save-btn" type="button">Zapisz</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ══ SCRIPTS ══ -->
 <script src="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.js"></script>
 <script>
@@ -2118,7 +2643,8 @@ const SETTINGS_KEY = 'czyprzyjezdzie_settings';
 const DEFAULT_SETTINGS = {
     showBrigade: false, showVehicle: false, showDelay: false, noShrinkMarkers: false,
     useLastLocation: false, userTimezone: false, showSeconds: false,
-    invertedPunctuality: false, sortByLocation: false, language: 'pl'
+    invertedPunctuality: false, sortByLocation: false, language: 'pl',
+    favDeparturesCount: 3
 };
 function loadSettings() {
     try { const raw = localStorage.getItem(SETTINGS_KEY); return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : { ...DEFAULT_SETTINGS }; }
@@ -2144,6 +2670,8 @@ function applySettingsToUI() {
     document.getElementById('s-show-seconds').checked = s.showSeconds;
     document.getElementById('s-inverted-punctuality').checked = s.invertedPunctuality;
     document.getElementById('s-sort-by-location').checked = s.sortByLocation;
+    const favCountEl = document.getElementById('s-fav-departures-count');
+    if (favCountEl) favCountEl.value = String(s.favDeparturesCount || 3);
     _updateLangUI(s.language);
 }
 applySettingsToUI();
@@ -3343,6 +3871,7 @@ function openStopView(meta) {
     _clearStopDepartures();
     if (stopDeparturesRefreshTimer) { clearInterval(stopDeparturesRefreshTimer); stopDeparturesRefreshTimer = null; }
     loadStopDepartures(meta); _pushStopUrl(meta);
+    _updateFavBtn(meta.id);
 }
 function closeStopView(pushUrl = true) {
     currentStop = null;
@@ -4776,6 +5305,640 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── Zamknięcie kliknięciem tła ───────────────────────────────────────────────
 document.getElementById('search-overlay')?.addEventListener('click', (e) => {
     if (e.target === document.getElementById('search-overlay')) closeSearch();
+});
+
+
+// ════════════════════════════════════════
+//  ULUBIONE PRZYSTANKI
+// ════════════════════════════════════════
+
+const FAV_STOPS_KEY = 'czyprzyjezdzie_fav_stops_' + window.CITY_NAME;
+
+// ── Struktura wpisu ──────────────────────────────────────────────────────────
+// {
+//   stopId: "1234",
+//   mode: "all" | "route" | "headsign" | "stop",
+//   value: "15,100"  ← dla mode !== "all"
+// }
+
+function _loadFavStops() {
+    try {
+        const raw = localStorage.getItem(FAV_STOPS_KEY);
+        return raw ? JSON.parse(raw) : [];
+    } catch (e) { return []; }
+}
+
+function _saveFavStops(favs) {
+    try { localStorage.setItem(FAV_STOPS_KEY, JSON.stringify(favs)); } catch (e) {}
+}
+
+function _isFavStop(stopId) {
+    return _loadFavStops().some(f => String(f.stopId) === String(stopId));
+}
+
+function _updateFavBtn(stopId) {
+    const btn = document.getElementById('sp-fav-btn');
+    const img = btn?.querySelector('img');
+    if (!btn || !img) return;
+    const isFav = _isFavStop(stopId);
+    img.src = window.STATIC_URL + 'img/' + (isFav ? 'star-filled.png' : 'star.png');
+    btn.title = isFav ? 'Edytuj ulubiony przystanek' : 'Dodaj do ulubionych';
+}
+
+// ── Otwieranie / zamykanie ulubionych ────────────────────────────────────────
+
+function openFavStops() {
+    closeMenu();
+    _show('fav-stops-overlay');
+    lucide.createIcons();
+    _renderFavStopsList();
+}
+
+function closeFavStops() {
+    _hide('fav-stops-overlay');
+}
+
+// ── Renderowanie listy ulubionych ────────────────────────────────────────────
+
+function _renderFavStopsList() {
+    const container = document.getElementById('fav-stops-list');
+    const emptyHint = document.getElementById('fav-stops-empty');
+    if (!container) return;
+
+    const favs = _loadFavStops();
+    if (favs.length === 0) {
+        container.innerHTML = '';
+        container.appendChild(emptyHint || _makeFavEmptyHint());
+        if (emptyHint) emptyHint.style.display = 'block';
+        return;
+    }
+    if (emptyHint) emptyHint.style.display = 'none';
+
+    // Placeholder karty dla każdego przystanku
+    container.innerHTML = favs.map(fav => {
+        const meta = STOP_META_BY_ID[String(fav.stopId)];
+        const name = meta ? `${meta.name}${meta.code ? ` (${meta.code})` : ''}` : `Przystanek ${fav.stopId}`;
+        const routeTypes = meta?.routeTypes || [3];
+        const badgeIconsHtml = _buildFavBadgeIcons(routeTypes);
+        return `
+        <div class="fav-stop-card" id="fav-card-${fav.stopId}">
+            <div class="fav-stop-card-header">
+                <div class="fav-stop-card-badge">${badgeIconsHtml}</div>
+                <div class="fav-stop-card-title">${name}</div>
+                <button class="fav-stop-card-edit-btn" type="button"
+                    onclick="openFavConfig('${fav.stopId}')" aria-label="Edytuj">
+                    <i data-lucide="pencil"></i>
+                </button>
+            </div>
+            <div id="fav-departures-${fav.stopId}" class="fav-stop-card-loading">
+                Ładowanie…
+            </div>
+        </div>`;
+    }).join('');
+
+    lucide.createIcons();
+
+    // Załaduj odjazdy dla każdej karty
+    for (const fav of favs) {
+        _loadFavDepartures(fav);
+    }
+}
+
+function _buildFavBadgeIcons(routeTypes) {
+    const uniqueTypes = [...new Set(routeTypes)];
+    return uniqueTypes.map(type => {
+        const cfg = ROUTE_TYPE_CONFIG[type] || ROUTE_TYPE_CONFIG[3];
+        const url = window.STATIC_URL + 'img/' + cfg.icon;
+        return `<div class="fav-stop-card-badge-icon"
+            style="-webkit-mask:url('${url}') no-repeat center/contain;mask:url('${url}') no-repeat center/contain;"></div>`;
+    }).join('');
+}
+
+async function _loadFavDepartures(fav) {
+    const el = document.getElementById(`fav-departures-${fav.stopId}`);
+    if (!el) return;
+
+    const count = loadSettings().favDeparturesCount || 3;
+
+    try {
+        const resp = await fetch(
+            `/api/getScheduleForStop.json?city=${window.CITY_NAME}&stop_id=${encodeURIComponent(fav.stopId)}`
+        );
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+
+        const today = _todayDate();
+        const now = new Date();
+        const schedule = Array.isArray(data.schedule) ? data.schedule : [];
+
+        // Prefetch kierunków dla trybu stop
+if (fav.mode === 'stop') {
+    const routeKeys = new Set(
+        schedule.map(s => {
+            const f = s.feed_name || (window.GTFS_FEEDS?.[0]?.name ?? '');
+            return `${f}:${s.route_id}`;
+        }).filter(Boolean)
+    );
+    await Promise.allSettled([...routeKeys].map(key => {
+        const [f, r] = key.split(':');
+        return _fetchRouteDetailsWithDirections(r, f);
+    }));
+}
+
+        // Filtruj wg konfiguracji ulubionego
+        let filtered = schedule.filter(s => {
+            if (s.status === 'passed') return false;
+            const dt = _combineDateTimeToDate(s.date || today, s.real_departure || s.departure_time || s.real_arrival || s.arrival_time);
+            if (dt && dt < now) return false;
+
+            if (fav.mode === 'all' || !fav.mode) return true;
+        
+        
+
+const sep = (fav.mode === 'route') ? ',' : '|';
+const values = String(fav.value || '')
+    .split(sep).map(v => v.trim().toLowerCase()).filter(Boolean);
+if (values.length === 0) return true;
+
+if (fav.mode === 'route') {
+    return values.includes(String(s.route_short_name || '').toLowerCase());
+}
+if (fav.mode === 'headsign') {
+    return values.some(v => String(s.headsign || '').toLowerCase().includes(v));
+}
+if (fav.mode === 'stop') {
+    // Sprawdź czy któryś z wybranych przystanków leży na trasie tego kursu
+    // Szukamy w kierunkach linii — stop_id → stop_name → porównujemy z values
+    const feedName = s.feed_name || (window.GTFS_FEEDS?.[0]?.name ?? '');
+    const routeId = s.route_id || '';
+    const routeData = routeDetailsCache[`${feedName}:${routeId}`];
+    if (!routeData?.directions) {
+        // Brak danych o kierunkach — fallback do headsign
+        return values.some(v => String(s.headsign || '').toLowerCase().includes(v));
+    }
+    // Zbierz wszystkie stop_id ze wszystkich kierunków tej linii
+    const stopIdsOnRoute = new Set();
+    for (const dir of Object.values(routeData.directions)) {
+        for (const st of (dir.stops || [])) {
+            if (st.stop_id != null) stopIdsOnRoute.add(String(st.stop_id));
+        }
+    }
+    // Dla każdego stop_id sprawdź czy jego nazwa pasuje do wybranych wartości
+    for (const sid of stopIdsOnRoute) {
+        const stopName = (STOP_NAME_BY_ID[sid] || '').toLowerCase();
+        if (stopName && values.some(v => stopName.includes(v) || v.includes(stopName))) {
+            return true;
+        }
+    }
+    return false;
+}
+return true;
+        });
+
+        // Sortuj po czasie
+        filtered.sort((a, b) => {
+            const ta = _combineDateTimeToDate(a.date || today, a.real_departure || a.departure_time);
+            const tb = _combineDateTimeToDate(b.date || today, b.real_departure || b.departure_time);
+            if (!ta && !tb) return 0;
+            if (!ta) return 1;
+            if (!tb) return -1;
+            return ta - tb;
+        });
+
+        filtered = filtered.slice(0, count);
+
+        if (filtered.length === 0) {
+            el.className = 'fav-stop-card-empty';
+            el.textContent = 'Brak nadchodzących odjazdów.';
+            return;
+        }
+
+        el.className = '';
+        el.innerHTML = filtered.map(item => {
+            const feedName = item.feed_name || (window.GTFS_FEEDS?.[0]?.name ?? '');
+            const routeId = item.route_id || '';
+            const cached = routeDetailsCache[`${feedName}:${routeId}`] || null;
+            const routeType = cached?.route_type ?? item.route_type ?? 3;
+            const cfg = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
+            const bg = cached?.color ? `#${cached.color}` : cfg.color;
+            const iconUrl = window.STATIC_URL + 'img/' + cfg.icon;
+            const lineName = item.route_short_name || routeId || '?';
+            const headsign = item.headsign || '';
+
+            const hasRt = !!(item.rt_source && item.rt_source !== 'static') && item.position_type !== 'estimated';
+const rawDep = hasRt ? (item.real_departure || item.departure_time) : item.departure_time;
+const depTime = _formatTimeHHMM(rawDep) || '--:--';
+
+const etaDate = _combineDateTimeToDate(item.date || today, rawDep);
+const eta = etaDate ? _formatEtaLabel(etaDate) : '';
+
+const hasRealtimePosition = hasRt && item.position_type !== 'estimated';
+const effectiveStatus = (item.status === 'passed' && etaDate && etaDate > now) ? 'upcoming' : item.status;
+const mapping = _statusMapping(item.delay_seconds, effectiveStatus, item.rt_source || 'static', hasRealtimePosition);
+
+// Kolor czasu i ety na podstawie statusu
+const timeColor = (() => {
+    if (!hasRt) return 'rgba(255,255,255,0.85)';
+    const cls = mapping.className || '';
+    if (cls.includes('ontime'))  return '#65E765';
+    if (cls.includes('late'))    return '#FF6966';
+    if (cls.includes('early'))   return '#FF9500';
+    if (cls.includes('passed'))  return '#858687';
+    return 'rgba(255,255,255,0.85)';
+})();
+
+const markerKey = _findMarkerKeyByTripId(item.trip_id);
+const tripId = item.trip_id || '';
+const dateStr = item.date || today;
+
+return `<div class="fav-stop-departure-row"
+    data-trip-id="${tripId}" data-feed-name="${feedName}"
+    data-date="${dateStr}" data-has-vehicle="${markerKey ? '1' : '0'}"
+    onclick="_onFavDepartureClick(this)">
+    <div class="fav-stop-departure-badge" style="background:${bg};">
+        <div class="fav-stop-departure-badge-icon"
+            style="-webkit-mask:url('${iconUrl}') no-repeat center/contain;mask:url('${iconUrl}') no-repeat center/contain;"></div>
+        ${lineName}
+    </div>
+    <div class="fav-stop-departure-headsign">${headsign}</div>
+    <div class="fav-stop-departure-eta" style="color:${timeColor};">${eta}</div>
+    <div class="fav-stop-departure-time" style="color:${timeColor};">${depTime}</div>
+</div>`;
+        }).join('');
+
+    } catch (e) {
+        el.className = 'fav-stop-card-empty';
+        el.textContent = 'Błąd ładowania odjazdów.';
+    }
+}
+
+function _onFavDepartureClick(row) {
+    const tripId = row.dataset.tripId;
+    const feedName = row.dataset.feedName;
+    const date = row.dataset.date;
+    if (!tripId) return;
+    closeFavStops();
+    if (row.dataset.hasVehicle === '1') {
+        const key = _findMarkerKeyByTripId(tripId);
+        if (key) { openVehicleViewFromMarker(key); return; }
+    }
+    if (feedName && date) {
+        window.location.href = `/${window.CITY_NAME}/trip/${encodeURIComponent(feedName)}/${encodeURIComponent(tripId)}/${date}/`;
+    }
+}
+
+// ── Konfiguracja ulubionego przystanku ───────────────────────────────────────
+
+let _favConfigStopId = null;
+let _favConfigStopSchedule = null; // surowe dane z API dla bieżącego przystanku
+let _favConfigSelectedRoutes = new Set();
+let _favConfigSelectedValues = new Set(); // dla headsign / stop
+
+async function openFavConfig(stopId) {
+    _favConfigStopId = String(stopId);
+    const favs = _loadFavStops();
+    const existing = favs.find(f => String(f.stopId) === _favConfigStopId);
+
+    const meta = STOP_META_BY_ID[_favConfigStopId];
+    const name = meta
+        ? `${meta.name}${meta.code ? ` (${meta.code})` : ''}`
+        : `Przystanek ${_favConfigStopId}`;
+
+    const titleEl = document.getElementById('fav-config-title');
+    if (titleEl) titleEl.textContent = name;
+
+    // Wczytaj istniejące ustawienia
+    const currentMode = existing?.mode || 'all';
+    const currentValue = existing?.value || '';
+
+    // Inicjuj sety z zapisanych wartości
+    _favConfigSelectedRoutes = new Set(
+        currentMode === 'route'
+            ? currentValue.split(',').map(v => v.trim()).filter(Boolean)
+            : []
+    );
+    _favConfigSelectedValues = new Set(
+        (currentMode === 'headsign' || currentMode === 'stop')
+            ? currentValue.split('|').map(v => v.trim()).filter(Boolean)
+            : []
+    );
+
+    const deleteBtn = document.getElementById('fav-config-delete-btn');
+    if (deleteBtn) deleteBtn.style.display = existing ? 'block' : 'none';
+
+    _show('fav-config-overlay');
+
+    // Pobierz rozkład przystanku (potrzebny do budowy list)
+    _favConfigStopSchedule = null;
+    const valueSection = document.getElementById('fav-config-value-section');
+    const valueBody = document.getElementById('fav-config-value-body');
+    if (valueBody) valueBody.innerHTML = '<div class="fav-config-loading">Ładowanie danych przystanku…</div>';
+
+    try {
+        const resp = await fetch(
+            `/api/getScheduleForStop.json?city=${window.CITY_NAME}&stop_id=${encodeURIComponent(stopId)}`
+        );
+        if (resp.ok) _favConfigStopSchedule = await resp.json();
+    } catch (e) {}
+
+    // Ustaw tryb (po załadowaniu danych żeby od razu wyrenderować właściwy panel)
+    _setFavConfigMode(currentMode);
+}
+
+function _getFavConfigRouteList() {
+    if (!_favConfigStopSchedule) return [];
+    const today = _todayDate();
+    const schedule = Array.isArray(_favConfigStopSchedule.schedule)
+        ? _favConfigStopSchedule.schedule : [];
+    const seen = new Map();
+    for (const s of schedule) {
+        const feedName = s.feed_name || (window.GTFS_FEEDS?.[0]?.name ?? '');
+        const routeId = s.route_id || '';
+        const key = `${feedName}:${routeId}`;
+        if (seen.has(key)) continue;
+        const cached = routeDetailsCache[key] || null;
+        const routeType = cached?.route_type ?? s.route_type ?? 3;
+        const cfg = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
+        seen.set(key, {
+            key,
+            feedName,
+            routeId,
+            shortName: s.route_short_name || cached?.route_short_name || routeId || '?',
+            bg: cached?.color ? `#${cached.color}` : cfg.color,
+            icon: cfg.icon,
+        });
+    }
+    return [...seen.values()].sort((a, b) =>
+        String(a.shortName).localeCompare(String(b.shortName), 'pl', { numeric: true })
+    );
+}
+
+function _getFavConfigHeadsigns() {
+    if (!_favConfigStopSchedule) return [];
+    const schedule = Array.isArray(_favConfigStopSchedule.schedule)
+        ? _favConfigStopSchedule.schedule : [];
+    const seen = new Set();
+    for (const s of schedule) {
+        const hs = String(s.headsign || '').trim();
+        if (hs) seen.add(hs);
+    }
+    return [...seen].sort((a, b) => a.localeCompare(b, 'pl'));
+}
+
+async function _getFavConfigTerminalStops() {
+    if (!_favConfigStopSchedule) return [];
+    const schedule = Array.isArray(_favConfigStopSchedule.schedule)
+        ? _favConfigStopSchedule.schedule : [];
+
+    // Zbierz unikalne kombinacje feed+route z rozkładu przystanku
+    const routeKeys = new Set();
+    for (const s of schedule) {
+        const feedName = s.feed_name || (window.GTFS_FEEDS?.[0]?.name ?? '');
+        const routeId = s.route_id || '';
+        if (feedName && routeId) routeKeys.add(`${feedName}:${routeId}`);
+    }
+
+    // Dla każdej linii pobierz szczegóły z kierunkami i przystankami
+    const stopNames = new Set();
+    await Promise.allSettled([...routeKeys].map(async key => {
+        const [feedName, routeId] = key.split(':');
+        const data = await _fetchRouteDetailsWithDirections(routeId, feedName);
+        if (!data?.directions) return;
+        for (const dir of Object.values(data.directions)) {
+            for (const st of (dir.stops || [])) {
+                const sid = String(st.stop_id ?? '');
+                const name = STOP_NAME_BY_ID[sid];
+                if (name) stopNames.add(name);
+            }
+        }
+    }));
+
+    // Usuń z listy sam ten przystanek
+    const thisMeta = STOP_META_BY_ID[_favConfigStopId];
+    if (thisMeta?.name) stopNames.delete(thisMeta.name);
+
+    return [...stopNames].sort((a, b) => a.localeCompare(b, 'pl'));
+}
+
+function _setFavConfigMode(mode) {
+    document.querySelectorAll('.fav-config-option').forEach(opt => {
+        opt.classList.toggle('active', opt.dataset.mode === mode);
+    });
+
+    const valueSection = document.getElementById('fav-config-value-section');
+    const valueLabel   = document.getElementById('fav-config-value-label');
+    const valueBody    = document.getElementById('fav-config-value-body');
+    if (!valueSection || !valueLabel || !valueBody) return;
+
+    if (mode === 'all') {
+        valueSection.style.display = 'none';
+        return;
+    }
+
+    valueSection.style.display = 'block';
+
+    if (mode === 'route') {
+        valueLabel.textContent = 'Linie';
+        _renderRoutePills(valueBody);
+    } else if (mode === 'headsign') {
+    valueLabel.textContent = 'Kierunek';
+    _renderSelectRows(
+        valueBody,
+        _getFavConfigHeadsigns(),
+        _favConfigSelectedValues,
+        '— wybierz kierunek —'
+    );
+} else if (mode === 'stop') {
+    valueLabel.textContent = 'Przystanek na trasie';
+    valueBody.innerHTML = '<div class="fav-config-loading">Ładowanie przystanków…</div>';
+    _getFavConfigTerminalStops().then(stops => {
+        _renderSelectRows(
+            valueBody,
+            stops,
+            _favConfigSelectedValues,
+            '— wybierz przystanek —'
+        );
+    });
+}
+}
+
+function _renderRoutePills(container) {
+    const routes = _getFavConfigRouteList();
+    if (routes.length === 0) {
+        container.innerHTML = '<div class="fav-config-loading">Brak danych o liniach.</div>';
+        return;
+    }
+    // Jeśli żadna nie jest wybrana → zaznacz wszystkie
+    if (_favConfigSelectedRoutes.size === 0) {
+        routes.forEach(r => _favConfigSelectedRoutes.add(r.shortName));
+    }
+    const scroll = document.createElement('div');
+    scroll.className = 'fav-config-routes-scroll';
+    for (const route of routes) {
+        const isActive = _favConfigSelectedRoutes.has(route.shortName);
+        const pill = document.createElement('div');
+        pill.className = 'fav-config-route-pill' + (isActive ? '' : ' fav-config-route-pill--inactive');
+        pill.style.background = route.bg;
+        pill.dataset.shortName = route.shortName;
+        const iconEl = document.createElement('div');
+        iconEl.className = 'fav-config-route-pill-icon';
+        iconEl.style.webkitMask = `url('${window.STATIC_URL}img/${route.icon}') no-repeat center/contain`;
+        iconEl.style.mask       = `url('${window.STATIC_URL}img/${route.icon}') no-repeat center/contain`;
+        pill.appendChild(iconEl);
+        pill.appendChild(document.createTextNode(route.shortName));
+        pill.addEventListener('click', () => {
+            const sn = route.shortName;
+            if (_favConfigSelectedRoutes.has(sn)) {
+                if (_favConfigSelectedRoutes.size > 1) _favConfigSelectedRoutes.delete(sn);
+            } else {
+                _favConfigSelectedRoutes.add(sn);
+            }
+            pill.classList.toggle('fav-config-route-pill--inactive', !_favConfigSelectedRoutes.has(sn));
+        });
+        scroll.appendChild(pill);
+    }
+    container.innerHTML = '';
+    container.appendChild(scroll);
+}
+
+function _renderSelectRows(container, items, selectedSet, placeholder) {
+    // Upewnij się że selectedSet ma dokładnie jeden element domyślnie
+    if (selectedSet.size === 0 && items.length > 0) {
+        selectedSet.add(items[0]);
+    }
+
+    function _rebuild() {
+        container.innerHTML = '';
+
+        const rowsWrap = document.createElement('div');
+        rowsWrap.className = 'fav-config-select-rows';
+
+        const selectedArr = [...selectedSet];
+
+        for (let i = 0; i < selectedArr.length; i++) {
+            const currentVal = selectedArr[i];
+            const row = document.createElement('div');
+            row.className = 'fav-config-select-row';
+
+            const sel = document.createElement('select');
+            sel.className = 'fav-config-select';
+
+            // Opcja pusta jako placeholder
+            const emptyOpt = document.createElement('option');
+            emptyOpt.value = '';
+            emptyOpt.textContent = placeholder || '— wybierz —';
+            emptyOpt.disabled = true;
+            sel.appendChild(emptyOpt);
+
+            for (const item of items) {
+                const opt = document.createElement('option');
+                opt.value = item;
+                opt.textContent = item;
+                sel.appendChild(opt);
+            }
+            sel.value = currentVal;
+
+            sel.addEventListener('change', () => {
+                const old = selectedArr[i];
+                selectedSet.delete(old);
+                if (sel.value) selectedSet.add(sel.value);
+                _rebuild();
+            });
+
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'fav-config-select-remove-btn';
+            removeBtn.type = 'button';
+            removeBtn.textContent = '×';
+            removeBtn.title = 'Usuń';
+            removeBtn.addEventListener('click', () => {
+                selectedSet.delete(currentVal);
+                if (selectedSet.size === 0 && items.length > 0) selectedSet.add(items[0]);
+                _rebuild();
+            });
+
+            row.appendChild(sel);
+            // Przycisk usuń tylko jeśli jest więcej niż jeden wiersz
+            if (selectedArr.length > 1) row.appendChild(removeBtn);
+            rowsWrap.appendChild(row);
+        }
+
+        container.appendChild(rowsWrap);
+
+        // Przycisk dodawania kolejnego
+        const addBtn = document.createElement('button');
+        addBtn.className = 'fav-config-add-btn';
+        addBtn.type = 'button';
+        addBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg> Dodaj kolejny`;
+        addBtn.addEventListener('click', () => {
+            // Dodaj pierwszy element którego jeszcze nie ma w secie
+            const next = items.find(v => !selectedSet.has(v));
+            if (next) { selectedSet.add(next); _rebuild(); }
+        });
+        // Ukryj przycisk + jeśli wszystkie opcje już są wybrane
+        if (selectedSet.size < items.length) container.appendChild(addBtn);
+    }
+
+    _rebuild();
+}
+
+// Kliknięcia opcji trybu
+document.querySelectorAll('.fav-config-option').forEach(opt => {
+    opt.addEventListener('click', () => {
+        // Reset seletów przy zmianie trybu
+        _favConfigSelectedRoutes.clear();
+        _favConfigSelectedValues.clear();
+        _setFavConfigMode(opt.dataset.mode);
+    });
+});
+
+document.getElementById('fav-config-save-btn').addEventListener('click', () => {
+    if (!_favConfigStopId) return;
+
+    const mode = document.querySelector('.fav-config-option.active')?.dataset.mode || 'all';
+    let value = '';
+
+    if (mode === 'route') {
+        value = [..._favConfigSelectedRoutes].join(',');
+    } else if (mode === 'headsign' || mode === 'stop') {
+        value = [..._favConfigSelectedValues].join('|');
+    }
+
+    const favs = _loadFavStops();
+    const idx  = favs.findIndex(f => String(f.stopId) === _favConfigStopId);
+    const entry = { stopId: _favConfigStopId, mode, value };
+
+    if (idx >= 0) favs[idx] = entry;
+    else favs.push(entry);
+
+    _saveFavStops(favs);
+    _hide('fav-config-overlay');
+    _updateFavBtn(_favConfigStopId);
+
+    const favOverlay = document.getElementById('fav-stops-overlay');
+    if (favOverlay?.classList.contains('overlay-visible')) _renderFavStopsList();
+});
+
+document.getElementById('fav-config-cancel-btn').addEventListener('click', () => {
+    _hide('fav-config-overlay');
+});
+
+document.getElementById('fav-config-delete-btn').addEventListener('click', () => {
+    if (!_favConfigStopId) return;
+    const favs = _loadFavStops().filter(f => String(f.stopId) !== _favConfigStopId);
+    _saveFavStops(favs);
+    _hide('fav-config-overlay');
+    _updateFavBtn(_favConfigStopId);
+    const favOverlay = document.getElementById('fav-stops-overlay');
+    if (favOverlay?.classList.contains('overlay-visible')) _renderFavStopsList();
+});
+
+// ── sp-fav-btn ────────────────────────────────────────────────────────────────
+document.getElementById('sp-fav-btn').addEventListener('click', () => {
+    if (!currentStop) return;
+    openFavConfig(currentStop.id);
 });
 
 </script>
