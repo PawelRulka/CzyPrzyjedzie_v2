@@ -229,7 +229,13 @@ def _delay_from_position(stops, nearest_idx, now_s):
     sched_dep_s = time_to_seconds(sched_dep)
     if sched_dep_s is None:
         return 0
-    return now_s - sched_dep_s
+    delay = now_s - sched_dep_s
+    # Jeśli pojazd jest przy jednym z dwóch pierwszych przystanków
+    # i wyliczone opóźnienie jest ujemne, to oczekiwanie na odjazd –
+    # nie raportujemy jazdy przed czasem na podstawie samej pozycji GPS
+    if nearest_idx <= 1 and delay < 0:
+        return 0
+    return delay
 
 
 # ---------------------------------------------------------------------------
@@ -843,6 +849,8 @@ def get_schedule_for_stop(request):
         stops_by_id = indexes["stops_by_id"]
         service_dates_map = get_service_dates_map(feed.name, today)
 
+        now_s = _current_time_seconds()
+
         for st in stop_times_for_stop:
             trip_id = st.get("trip_id")
             trip = trips_by_id.get(trip_id)
@@ -859,13 +867,25 @@ def get_schedule_for_stop(request):
             max_trip_seq = max((int(ts.get("stop_sequence", 0)) for ts in trip_stops), default=stop_seq)
             is_last_stop = stop_seq >= max_trip_seq
 
+            # Nie przekazuj pozycji pojazdu dla kursów odległych w czasie –
+            # pojazd może być na wcześniejszym kursie tej samej brygady,
+            # co skutkuje absurdalnym wyliczonym opóźnieniem.
+            # TripUpdates (updates_idx) nadal przekazujemy bez zmian –
+            # są powiązane z konkretnym trip_id, więc nie ma ryzyka pomyłki.
+            sched_dep_s = time_to_seconds(sched_dep or sched_arr)
+            trip_is_distant = (
+                sched_dep_s is not None
+                and sched_dep_s > now_s + 30 * 60
+            )
+            effective_vehicles_idx = {} if trip_is_distant else vehicles_idx
+
             rt_info = get_single_stop_realtime(
                 trip_id=trip_id,
                 stop_id=stop_id,
                 stop_sequence=stop_seq,
                 sched_arr=sched_arr,
                 sched_dep=sched_dep,
-                vehicles_idx=vehicles_idx,
+                vehicles_idx=effective_vehicles_idx,
                 updates_idx=updates_idx,
                 all_trip_stops=indexes["stop_times_by_trip"].get(trip_id, []),
                 stops_by_id=stops_by_id,

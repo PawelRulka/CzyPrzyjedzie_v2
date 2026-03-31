@@ -2054,6 +2054,39 @@
     border-color: rgba(255,255,255,0.28);
 }
 
+/* ── User location marker ── */
+.user-location-marker {
+    position: relative;
+    width: 20px;
+    height: 20px;
+    cursor: default;
+}
+.user-location-dot {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 14px; height: 14px;
+    background: #2C95D0;
+    border: 2.5px solid #FFFFFF;
+    border-radius: 50%;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    z-index: 2;
+}
+.user-location-pulse {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: rgba(44,149,208,0.35);
+    animation: user-pulse 2s ease-out infinite;
+    z-index: 1;
+}
+@keyframes user-pulse {
+    0%   { transform: translate(-50%,-50%) scale(1);   opacity: 0.8; }
+    100% { transform: translate(-50%,-50%) scale(3.5); opacity: 0; }
+}
+
     </style>
 </head>
 <body class="city-map-page">
@@ -2355,7 +2388,7 @@
                     </label>
                 </div>
                 <div class="setting-item">
-                    <span class="setting-label">Sortuj przystanki według twojej lokalizacji</span>
+                    <span class="setting-label">Sortuj punkty według twojej lokalizacji</span>
                     <label class="toggle-switch">
                         <input type="checkbox" id="s-sort-by-location" onchange="saveSetting('sortByLocation', this.checked)">
                         <span class="toggle-slider"></span>
@@ -3406,7 +3439,7 @@ function _renderVehicleTimeline() {
     const iconUrl = window.STATIC_URL + 'img/' + routeCfg.icon, lineColor = currentVehicle?.routeColor ? `#${currentVehicle.routeColor}` : routeCfg.color, borderColor = _darkenColor(lineColor, 0.75);
     container.style.setProperty('--route-line-color', lineColor);
     const firstSt = stopTimes[0];
-    const waitingAtTerminus = !!(firstSt && (firstSt.status === 'upcoming' || firstSt.status === 'current') && firstSt.delay_seconds != null && firstSt.delay_seconds < 0);
+    const waitingAtTerminus = !!(firstSt && (firstSt.status === 'upcoming' || firstSt.status === 'current') && firstSt.delay_seconds != null && firstSt.delay_seconds <= 0);
     const showSec = loadSettings().showSeconds;
     const useCompactTimes = showSec || stopTimes.some(st => {
         if (st.status === 'passed') return false;
@@ -5246,6 +5279,21 @@ function _renderVehicleResult(r) {
     </button>`;
 }
 
+function _haversineDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371000; // metry
+    const toRad = d => d * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function _getUserLatLon() {
+    if (!_userLocationMarker) return null;
+    const pos = _userLocationMarker.getLngLat();
+    if (!pos) return null;
+    return { lat: pos.lat, lon: pos.lng };
+}
+
 function _doSearch(q) {
     const hint    = document.getElementById('search-hint');
     const results = document.getElementById('search-results');
@@ -5261,6 +5309,36 @@ function _doSearch(q) {
     const vehicles = _searchVehicles(q);
     const routes   = _searchRoutes(q);
     const stops    = _searchStops(q);
+
+    const s = loadSettings();
+    const userPos = (s.sortByLocation && _userLocationState !== 'off' && _userLocationState !== 'denied')
+        ? _getUserLatLon()
+        : null;
+
+    if (userPos) {
+        // Przystanki — sortuj po odległości w obrębie tego samego score
+        stops.sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score;
+            const da = _haversineDistance(userPos.lat, userPos.lon, a.meta.lat, a.meta.lon);
+            const db = _haversineDistance(userPos.lat, userPos.lon, b.meta.lat, b.meta.lon);
+            return da - db;
+        });
+
+        // Pojazdy — sortuj po odległości markera od użytkownika
+        vehicles.sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score;
+            const posA = vehiclePositions[a.markerKey];
+            const posB = vehiclePositions[b.markerKey];
+            if (!posA && !posB) return 0;
+            if (!posA) return 1;
+            if (!posB) return -1;
+            const da = _haversineDistance(userPos.lat, userPos.lon, posA.lat, posA.lon);
+            const db = _haversineDistance(userPos.lat, userPos.lon, posB.lat, posB.lon);
+            return da - db;
+        });
+
+        // Linie — nie sortujemy po odległości (nie mają jednoznacznej pozycji)
+    }
 
     if (vehicles.length === 0 && routes.length === 0 && stops.length === 0) {
         results.innerHTML = `<div class="search-no-results">Nie znaleziono wyników dla „${q}"</div>`;
@@ -5940,6 +6018,119 @@ document.getElementById('sp-fav-btn').addEventListener('click', () => {
     if (!currentStop) return;
     openFavConfig(currentStop.id);
 });
+
+
+// ════════════════════════════════════════
+//  USER LOCATION
+// ════════════════════════════════════════
+// Stany: 'off' | 'tracking' | 'marker' | 'denied'
+let _userLocationMarker = null;
+let _userLocationWatchId = null;
+let _userLocationState = 'off';
+
+const _navBtn = document.querySelector('.bottom-control .circle-btn');
+
+function _setNavBtnStyle(state) {
+    if (!_navBtn) return;
+    const icon = _navBtn.querySelector('svg');
+    _navBtn.style.background = '';
+    _navBtn.style.color = '';
+    if (icon) { icon.style.fill = 'none'; icon.style.color = ''; }
+
+    if (state === 'tracking') {
+        _navBtn.style.background = '#2C95D0';
+        if (icon) { icon.style.fill = '#fff'; icon.style.color = '#fff'; }
+    } else if (state === 'marker') {
+        if (icon) icon.style.color = '#2C95D0';
+    } else if (state === 'denied') {
+        if (icon) icon.style.color = '#FF6966';
+    }
+}
+
+function _placeUserMarker(lat, lon) {
+    const el = document.createElement('div');
+    el.className = 'user-location-marker';
+    el.innerHTML = `<div class="user-location-pulse"></div><div class="user-location-dot"></div>`;
+    if (_userLocationMarker) _userLocationMarker.remove();
+    _userLocationMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([lon, lat])
+        .addTo(mapa);
+}
+
+function _onPositionUpdate(pos) {
+    const { latitude: lat, longitude: lon } = pos.coords;
+    _placeUserMarker(lat, lon);
+    if (_userLocationState === 'tracking') {
+        mapa.easeTo({ center: [lon, lat], zoom: Math.max(mapa.getZoom(), 15), duration: 800 });
+    }
+}
+
+function _onPositionError(err) {
+    if (err.code === GeolocationPositionError.PERMISSION_DENIED) {
+        _stopWatching();
+        if (_userLocationMarker) { _userLocationMarker.remove(); _userLocationMarker = null; }
+        _userLocationState = 'denied';
+        _setNavBtnStyle('denied');
+    }
+}
+
+function _startWatching() {
+    if (_userLocationWatchId !== null) return;
+    _userLocationWatchId = navigator.geolocation.watchPosition(
+        _onPositionUpdate,
+        _onPositionError,
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+    );
+}
+
+function _stopWatching() {
+    if (_userLocationWatchId !== null) {
+        navigator.geolocation.clearWatch(_userLocationWatchId);
+        _userLocationWatchId = null;
+    }
+    mapa.off('dragstart', _onMapDrag);
+}
+
+function _onMapDrag() {
+    if (_userLocationState === 'tracking') {
+        _userLocationState = 'marker';
+        _setNavBtnStyle('marker');
+    }
+}
+
+function onNavBtnClick() {
+    if (!('geolocation' in navigator)) {
+        alert('Twoja przeglądarka nie obsługuje geolokalizacji.');
+        return;
+    }
+
+    if (_userLocationState === 'off') {
+        // Pierwsze kliknięcie — prosimy o zgodę i zaczynamy
+        _userLocationState = 'tracking';
+        _setNavBtnStyle('tracking');
+        _startWatching();
+        mapa.on('dragstart', _onMapDrag);
+
+    } else if (_userLocationState === 'tracking') {
+        // Drugie kliknięcie — zatrzymaj podążanie, zostaw marker
+        _userLocationState = 'marker';
+        _setNavBtnStyle('marker');
+
+    } else if (_userLocationState === 'marker') {
+        // Trzecie kliknięcie — wróć do podążania
+        _userLocationState = 'tracking';
+        _setNavBtnStyle('tracking');
+        // Natychmiast wycentruj jeśli znamy pozycję
+        const pos = _userLocationMarker?.getLngLat();
+        if (pos) mapa.easeTo({ center: [pos.lng, pos.lat], zoom: Math.max(mapa.getZoom(), 15), duration: 800 });
+
+    } else if (_userLocationState === 'denied') {
+        // Stan terminalny — pokaż info
+        alert('Dostęp do lokalizacji został zablokowany. Zmień ustawienia w przeglądarce i odśwież stronę.');
+    }
+}
+
+if (_navBtn) _navBtn.addEventListener('click', onNavBtnClick);
 
 </script>
 </body>
