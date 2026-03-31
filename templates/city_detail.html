@@ -6132,6 +6132,373 @@ function onNavBtnClick() {
 
 if (_navBtn) _navBtn.addEventListener('click', onNavBtnClick);
 
+
+
+
+// ════════════════════════════════════════
+//  MULTI-MARKER DISAMBIGUATION POPUP
+// ════════════════════════════════════════
+
+(function initMultiMarkerPopup() {
+
+const POPUP_ID   = 'multi-marker-popup';
+const OVERLAY_ID = 'multi-marker-overlay';
+const HIT_RADIUS_PX = 32;
+
+// Cache headsignów: tripId → headsign string
+const _headsignCache = {};
+
+async function _fetchHeadsign(feedName, vehicleId, tripId) {
+    // Klucz cache: preferuj tripId (stabilniejszy), fallback na vehicleId
+    const cacheKey = tripId ? `trip:${feedName}:${tripId}` : `veh:${feedName}:${vehicleId}`;
+    if (_headsignCache[cacheKey] !== undefined) return _headsignCache[cacheKey];
+
+    // Oznacz jako "w trakcie" żeby uniknąć równoległych zapytań
+    _headsignCache[cacheKey] = null;
+    try {
+        const r = await fetch(
+            `/api/getTripByVehicle.json?feed_name=${encodeURIComponent(feedName)}&vehicle_id=${encodeURIComponent(vehicleId)}`
+        );
+        if (!r.ok) return null;
+        const data = await r.json();
+        const hs = data?.headsign || null;
+        _headsignCache[cacheKey] = hs;
+        return hs;
+    } catch (e) {
+        delete _headsignCache[cacheKey];
+        return null;
+    }
+}
+
+// ── DOM ──────────────────────────────────────────────────────────────────
+
+function _createPopupDOM() {
+    const overlay = document.createElement('div');
+    overlay.id = OVERLAY_ID;
+    overlay.style.cssText = `
+        position:fixed;inset:0;z-index:9000;
+        display:none;align-items:flex-end;justify-content:center;
+    `;
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) _closePopup();
+    });
+
+    const card = document.createElement('div');
+    card.id = POPUP_ID;
+    card.style.cssText = `
+        background:#212529;border-radius:20px 20px 0 0;
+        box-shadow:0 -4px 24px rgba(0,0,0,.65);
+        width:100%;max-width:520px;
+        padding:8px 16px 24px 16px;
+        animation:mmSlideUp .2s ease;
+    `;
+    card.innerHTML = `
+    <style>
+        @keyframes mmSlideUp{
+            from{transform:translateY(50px);opacity:0}
+            to{transform:translateY(0);opacity:1}
+        }
+    </style>
+    <div style="display:flex;align-items:center;justify-content:center;padding:8px 0 10px;">
+        <div style="width:40px;height:4px;background:rgba(255,255,255,.25);
+            border-radius:2px;"></div>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:0 0 12px;">
+        <div id="mm-subtitle" style="
+            font-family:'Roboto',sans-serif;font-size:13px;
+            color:rgba(255,255,255,.5);flex:1;
+        "></div>
+        <button id="mm-close" style="
+            width:30px;height:30px;border-radius:999px;border:none;padding:0;
+            background:#343A40;display:flex;align-items:center;justify-content:center;
+            cursor:pointer;flex-shrink:0;margin-left:8px;
+        ">
+            <img src="${window.STATIC_URL}img/close.png" alt="Zamknij"
+                 style="width:18px;height:18px;">
+        </button>
+    </div>
+    <div id="mm-items" style="
+        display:flex;flex-direction:column;gap:7px;
+        max-height:55vh;overflow-y:auto;padding-right:2px;
+    "></div>
+`;
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    document.getElementById('mm-close').addEventListener('click', _closePopup);
+}
+
+function _openPopup(items) {
+    const overlay  = document.getElementById(OVERLAY_ID);
+    const subtitle = document.getElementById('mm-subtitle');
+    const itemsEl  = document.getElementById('mm-items');
+    if (!overlay || !subtitle || !itemsEl) return;
+
+    const n = items.length;
+    const msgs = [
+        `Nie macaj ${n} znaczników naraz, wybierz jeden…`,
+        `Hej, ale tutaj ścisk! ${n} znaczników. Wybierz jeden:`,
+        `Aż ${n} w jednym miejscu? Odważne. Wybierz:`,
+        `${n} rzeczy naraz to już przesada. Wybierz jedną:`,
+    ];
+    subtitle.textContent = msgs[Math.floor(Math.random() * msgs.length)];
+
+    itemsEl.innerHTML = '';
+    for (const item of items) {
+        itemsEl.appendChild(_buildItemBtn(item));
+    }
+
+    overlay.style.display = 'flex';
+}
+
+function _buildItemBtn(item) {
+    const btn = document.createElement('button');
+    btn.style.cssText = `
+        display:flex;align-items:center;gap:10px;
+        width:100%;background:#0E1014;border:none;border-radius:12px;
+        padding:10px 12px;cursor:pointer;text-align:left;
+        transition:background .15s;
+    `;
+    btn.onmouseenter = () => { btn.style.background = '#1a1e22'; };
+    btn.onmouseleave = () => { btn.style.background = '#0E1014'; };
+
+    // Badge
+    const badge = document.createElement('div');
+    badge.style.cssText = `
+        display:inline-flex;align-items:center;gap:5px;
+        padding:4px 9px;border-radius:8px;
+        background:${item.badgeBg};flex-shrink:0;max-width:55%;
+    `;
+    const badgeIcon = document.createElement('div');
+    badgeIcon.style.cssText = `
+        width:13px;height:13px;flex-shrink:0;
+        background:rgba(255,255,255,.9);
+        -webkit-mask:url('${item.iconUrl}') no-repeat center/contain;
+        mask:url('${item.iconUrl}') no-repeat center/contain;
+    `;
+    badge.appendChild(badgeIcon);
+    if (item.badgeLabel) {
+        const lbl = document.createElement('span');
+        lbl.style.cssText = `
+            font-family:'Roboto',sans-serif;font-size:13px;
+            font-weight:700;color:#fff;white-space:nowrap;
+            overflow:hidden;text-overflow:ellipsis;
+        `;
+        lbl.textContent = item.badgeLabel;
+        badge.appendChild(lbl);
+    }
+
+    // Info
+    const info = document.createElement('div');
+    info.style.cssText = `min-width:0;flex:1;`;
+
+    const nameEl = document.createElement('div');
+    nameEl.style.cssText = `
+        font-family:'Roboto',sans-serif;font-size:13px;
+        font-weight:500;color:#E7E8E8;
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    `;
+    nameEl.textContent = item.name;
+    // Jeśli item ma _nameEl – zachowaj referencję żeby zaktualizować po fetch
+    item._nameEl = nameEl;
+
+    const subEl = document.createElement('div');
+    subEl.style.cssText = `
+        font-family:'Roboto',sans-serif;font-size:11px;
+        color:rgba(255,255,255,.4);margin-top:1px;
+    `;
+    subEl.textContent = item.sub;
+
+    info.appendChild(nameEl);
+    info.appendChild(subEl);
+    btn.appendChild(badge);
+    btn.appendChild(info);
+    btn.addEventListener('click', () => { _closePopup(); item.action(); });
+
+    // Async aktualizacja headsignu dla pojazdów
+    if (item.type === 'vehicle' && item._fetchHeadsign) {
+        item._fetchHeadsign().then(hs => {
+            if (hs && item._nameEl) item._nameEl.textContent = hs;
+        });
+    }
+
+    return btn;
+}
+
+function _closePopup() {
+    const el = document.getElementById(OVERLAY_ID);
+    if (el) el.style.display = 'none';
+}
+
+// ── Kandydaci wokół punktu ────────────────────────────────────────────────
+
+function _itemsNear(clickedLngLat) {
+    const clickPt = mapa.project(clickedLngLat);
+    const items   = [];
+    const seenKeys = new Set();
+
+    // Pojazdy
+    for (const [key, marker] of Object.entries(vehicleMarkers)) {
+        if (seenKeys.has(key)) continue;
+        const el = marker.getElement();
+        if (!el || el.style.display === 'none') continue;
+
+        const pt = mapa.project(marker.getLngLat());
+        const dx = clickPt.x - pt.x, dy = clickPt.y - pt.y;
+        if (Math.sqrt(dx*dx + dy*dy) > HIT_RADIUS_PX) continue;
+
+        const metaWrap = vehicleMarkerMeta[key];
+        if (!metaWrap?.meta) continue;
+        const meta = metaWrap.meta;
+
+        const routeType = meta.routeType ?? 3;
+        const cfg = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
+        const line = meta.routeShortName || '?';
+        const tripShort = meta.tripShortName;
+        const vehicleNum = meta.displayVehicleId || meta.vehicleId;
+        const lineAndTrip = tripShort ? `${line} ${tripShort}` : line;
+
+        const feedName  = meta.feedName;
+        const vehicleId = meta.vehicleId;
+        const tripId    = meta.tripId;
+
+        seenKeys.add(key);
+        items.push({
+            type:       'vehicle',
+            badgeBg:    meta.routeColor ? `#${meta.routeColor}` : cfg.color,
+            iconUrl:    `${window.STATIC_URL}img/${cfg.icon}`,
+            badgeLabel: vehicleNum ? `${lineAndTrip}/${vehicleNum}` : lineAndTrip,
+            // Pokaż headsign z meta jeśli jest, albo placeholder
+            name:       meta.headsign || '…',
+            sub:        `${cfg.name}${vehicleNum ? ' · #' + vehicleNum : ''}`,
+            action:     () => openVehicleViewFromMarker(key),
+            // Funkcja do async enrichmentu
+            _fetchHeadsign: (feedName && vehicleId)
+                ? () => _fetchHeadsign(feedName, vehicleId, tripId)
+                : null,
+        });
+    }
+
+    // Przystanki
+    for (const marker of allStopMarkers) {
+        const el = marker.getElement();
+        if (!el || el.style.display === 'none') continue;
+        const stopId = el.dataset.stopId;
+        if (!stopId || seenKeys.has('stop:' + stopId)) continue;
+
+        const pt = mapa.project(marker.getLngLat());
+        const dx = clickPt.x - pt.x, dy = clickPt.y - pt.y;
+        if (Math.sqrt(dx*dx + dy*dy) > HIT_RADIUS_PX) continue;
+
+        const meta = STOP_META_BY_ID[stopId];
+        const name = meta
+            ? `${meta.name}${meta.code ? ` (${meta.code})` : ''}`
+            : `Przystanek ${stopId}`;
+        const routeType = meta?.routeTypes?.[0] ?? 3;
+        const cfg = ROUTE_TYPE_CONFIG[routeType] || ROUTE_TYPE_CONFIG[3];
+
+        seenKeys.add('stop:' + stopId);
+        items.push({
+            type:       'stop',
+            badgeBg:    '#2C95D0',
+            iconUrl:    `${window.STATIC_URL}img/${cfg.icon}`,
+            badgeLabel: '',
+            name,
+            sub:        'Przystanek',
+            action:     () => openStopViewFromId(stopId),
+        });
+    }
+
+    return items;
+}
+
+// ── Patch onclick markerów ────────────────────────────────────────────────
+
+const _patchedVehicles = new Set();
+const _patchedStops    = new Set();
+
+function _makeVehicleOnClick(key) {
+    return function (e) {
+        e?.stopPropagation();
+        const lngLat = vehicleMarkers[key]?.getLngLat();
+        if (!lngLat) { openVehicleViewFromMarker(key); return; }
+        const nearby = _itemsNear(lngLat);
+        if (nearby.length <= 1) {
+            openVehicleViewFromMarker(key);
+        } else {
+            _openPopup(nearby);
+        }
+    };
+}
+
+function _makeStopOnClick(stopId) {
+    return function (e) {
+        e?.stopPropagation();
+        const meta = STOP_META_BY_ID[stopId];
+        if (!meta) { openStopViewFromId(stopId); return; }
+        const nearby = _itemsNear({ lng: meta.lon, lat: meta.lat });
+        if (nearby.length <= 1) {
+            openStopViewFromId(stopId);
+        } else {
+            _openPopup(nearby);
+        }
+    };
+}
+
+function _patchVehicleMarkers() {
+    for (const [key, marker] of Object.entries(vehicleMarkers)) {
+        if (_patchedVehicles.has(key)) continue;
+        const el = marker.getElement();
+        if (!el) continue;
+        el.onclick = _makeVehicleOnClick(key);
+        _patchedVehicles.add(key);
+    }
+}
+
+function _patchStopMarkers() {
+    for (const marker of allStopMarkers) {
+        const el = marker.getElement();
+        if (!el) continue;
+        const stopId = el.dataset.stopId;
+        if (!stopId || _patchedStops.has(stopId)) continue;
+        el.onclick = _makeStopOnClick(stopId);
+        _patchedStops.add(stopId);
+    }
+}
+
+function _patchAll() {
+    _patchVehicleMarkers();
+    _patchStopMarkers();
+}
+
+// Synchronizacja z rytmem refreshVehicles (co 10 s)
+setInterval(_patchAll, 10_000);
+
+// Hook na ładowanie przystanków
+const _origUpdateVis = window.updateStopMarkersVisibility;
+window.updateStopMarkersVisibility = function (...args) {
+    const r = _origUpdateVis.apply(this, args);
+    setTimeout(_patchStopMarkers, 80);
+    return r;
+};
+
+// Zamknij popup przy otwarciu paneli
+const _origOpenVehicle = window.openVehicleView;
+window.openVehicleView = function (...args) {
+    _closePopup();
+    return _origOpenVehicle.apply(this, args);
+};
+const _origOpenStop = window.openStopView;
+window.openStopView = function (...args) {
+    _closePopup();
+    return _origOpenStop.apply(this, args);
+};
+
+_createPopupDOM();
+setTimeout(_patchAll, 2500);
+
+})();
+
 </script>
 </body>
 </html>
