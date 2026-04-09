@@ -191,15 +191,18 @@ def load_realtime_cached(feed: GTFSFeed) -> dict:
     return data
 
 
+_rt_index_cache: dict[str, tuple[dict, dict, float]] = {}  # (vehicles_idx, updates_idx, timestamp)
+
 def index_realtime_cached(feed_name: str, realtime: dict) -> tuple[dict, dict]:
+    now = time.monotonic()
     with _rt_index_cache_lock:
         cached = _rt_index_cache.get(feed_name)
-        if cached:
-            return cached
+        if cached and (now - cached[2]) < RT_CACHE_TTL:
+            return cached[0], cached[1]
 
     vehicles_idx, updates_idx = index_realtime(realtime)
     with _rt_index_cache_lock:
-        _rt_index_cache[feed_name] = (vehicles_idx, updates_idx)
+        _rt_index_cache[feed_name] = (vehicles_idx, updates_idx, time.monotonic())
     return vehicles_idx, updates_idx
 
 

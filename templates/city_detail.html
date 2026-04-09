@@ -616,7 +616,7 @@ const i18nDict = {
         vehicle_no_data_load_error: "Nie udało się załadować danych kursu.",
         vehicle_ontime: "Planowo",
         vehicle_late: "Opóźniony",
-        vehicle_early: "Przed czasem",
+        vehicle_early: "przed czasem",
         vehicle_static: "Brak danych realtime",
         vehicle_passed: "Odjechał",
         vehicle_waiting: "Oczekiwanie na odjazd",
@@ -719,8 +719,8 @@ const i18nDict = {
         vehicle_no_data_no_active: "No active trip for the selected vehicle.",
         vehicle_no_data_load_error: "Failed to load trip data.",
         vehicle_ontime: "On time",
-        vehicle_late: "Late",
-        vehicle_early: "Early",
+        vehicle_late: "Delayed",
+        vehicle_early: "early",
         vehicle_static: "No realtime data",
         vehicle_passed: "Departed",
         vehicle_waiting: "Waiting for departure",
@@ -1117,8 +1117,8 @@ function _statusMapping(delaySeconds, status, source, hasRealtimePosition) {
         const label = showSec ? (secs > 0 ? `Opóźniony ${mins} min i ${secs} s` : `Opóźniony ${mins} min`) : `Opóźniony ${mins} min`;
         return { label: translate('vehicle_late') + (label.replace('Opóźniony', '').trim() ? ' ' + label.replace('Opóźniony', '').trim() : ''), className: 'vehicle-stop-status--late', icon: `${prefix}late.png` };
     }
-    const label = showSec ? (secs > 0 ? `${mins} min i ${secs} s przed czasem` : `${mins} min przed czasem`) : `${mins} min przed czasem`;
-    return { label: translate('vehicle_early') + (label.replace('przed czasem', '').trim() ? ' ' + label.replace('przed czasem', '').trim() : ''), className: 'vehicle-stop-status--early', icon: `${prefix}early.png` };
+    const earlyDetail = showSec && secs > 0 ? `${mins} min i ${secs} s` : mins > 0 ? `${mins} min` : null;
+    return { label: earlyDetail ? `${earlyDetail} ${translate('vehicle_early')}` : translate('vehicle_early'), className: 'vehicle-stop-status--early', icon: `${prefix}early.png` };
 }
 function _darkenColor(hex, factor) {
     if (!hex || typeof hex !== 'string' || hex[0] !== '#' || (hex.length !== 7 && hex.length !== 4)) return hex || '#32631F';
@@ -1259,13 +1259,16 @@ function buildVehicleMarkerHTML(routeShortName, tripShortName, blockId, vehicleI
     const restParts = [];
     if (settings.showBrigade && blockId && blockId !== 'N/A') restParts.push(blockId);
     if (settings.showVehicle && vehicleId) restParts.push(vehicleId);
-    if (settings.showDelay) { const ds = _formatMarkerDelay(delaySeconds, settings); if (ds != null) restParts.push(ds); }
+    let delayPart = null;
+    if (settings.showDelay) { const ds = _formatMarkerDelay(delaySeconds, settings); if (ds != null) delayPart = ds; }
     const base = tripShortName ? `${line} ${tripShortName}` : line;
-    const label = restParts.length ? `${base}/${restParts.join('/')}` : base;
+    const withRest = restParts.length ? `${base}/${restParts.join('/')}` : base;
+    const label = delayPart != null ? `${withRest} (${delayPart})` : withRest;
     const arrowHTML = bearing != null ? `<div class="vm-arrow-wrap"><svg class="vm-arrow-svg" viewBox="0 0 14 14" style="transform:rotate(${bearing}deg);"><polygon points="7,1 13,13 7,10 1,13" fill="rgba(255,255,255,0.92)"/></svg></div>` : '';
     const estimatedIconHtml = isEstimated ? `<div class="vm-icon" style="-webkit-mask:url('${window.STATIC_URL}img/no_vp.png') no-repeat center/contain;mask:url('${window.STATIC_URL}img/no_vp.png') no-repeat center/contain;"></div>` : '';
     const baseLabel = tripShortName ? `<b>${line} ${tripShortName}</b>` : `<b>${line}</b>`;
-    const fullLabel = restParts.length ? `${baseLabel}/${restParts.join('/')}` : baseLabel;
+    const withRestLabel = restParts.length ? `${baseLabel}/${restParts.join('/')}` : baseLabel;
+    const fullLabel = delayPart != null ? `${withRestLabel} (${delayPart})` : withRestLabel;
     const html = `<div class="vm-wrap"><div class="vm-body" style="background:${bg};">${arrowHTML}<div class="vm-icon" style="-webkit-mask:url('${iconUrl}') no-repeat center/contain;mask:url('${iconUrl}') no-repeat center/contain;"></div>${estimatedIconHtml}<span class="vm-label">${fullLabel}</span></div></div>`;
     return { html, bg };
 }
@@ -1319,11 +1322,17 @@ async function refreshVehicles() {
         const skipAnimation = allVehicles.length > 160;
         const bounds = (() => { try { return mapa.getBounds(); } catch (e) { return null; } })();
         const feedsNeedingTrips = new Set(allVehicles.filter(v => v.trip_id).map(v => v.feed_name));
-        await Promise.allSettled([...feedsNeedingTrips].map(feedName => {
-            const hasCached = Object.keys(tripDetailsCache).some(k => k.startsWith(feedName + ':'));
-            if (hasCached) return Promise.resolve();
-            return _fetchAllTripDetailsForFeed(feedName);
-        }));
+await Promise.allSettled([...feedsNeedingTrips].map(async feedName => {
+    const url = `/api/getLineBrigadeDelayForTrip.json?city=${window.CITY_NAME}&feed_name=${encodeURIComponent(feedName)}&date=${_todayDate()}`;
+    try {
+        const r = await fetch(url);
+        if (!r.ok) return;
+        const data = await r.json();
+        for (const trip of (data.trips || [])) {
+            tripDetailsCache[`${feedName}:${trip.trip_id}`] = trip;
+        }
+    } catch (e) {}
+}));
         for (const v of allVehicles) {
             const key = `${v.feed_name}:${v.vehicle_id ?? v.trip_id ?? Math.random()}`;
             if (_vehicleMarkersMode === 'trip') continue;
